@@ -1,0 +1,112 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 14% 10%;
+    --foreground: 210 40% 98%;
+
+    --card: 230 14% 12%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 230 14% 12%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 270 95% 65%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 230 14% 20%;
+    --muted-foreground: 210 40% 80%;
+
+    --accent: 270 95% 65%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 25%;
+    --input: 214.3 31.8% 25%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 230 14% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 230 14% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 230 14% 25%;
+    --sidebar-ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .health-bar {
+    @apply h-4 rounded-full bg-muted overflow-hidden relative;
+  }
+  
+  .health-bar-fill {
+    @apply h-full transition-all duration-500 ease-out;
+  }
+
+  .code-editor {
+    @apply font-mono text-sm p-4 rounded-md bg-card border border-border h-[300px] overflow-auto;
+  }
+
+  .powerup-button {
+    @apply rounded-full bg-muted p-2 hover:bg-secondary/70 transition-colors duration-200;
+  }
+
+  .powerup-button.active {
+    @apply bg-secondary text-white;
+  }
+
+  .powerup-button.disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  .pulse {
+    @apply animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite];
+  }
+
+  .fade-in {
+    @apply animate-fade-in;
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
