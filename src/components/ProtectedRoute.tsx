@@ -18,7 +18,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isAuthenticated) {
-    // Redirect to login page but save the attempted url
+    // Save the current location and redirect to login
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

@@ -15,6 +15,9 @@ import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
 import ForgotPassword from "@/pages/ForgotPassword";
 import FindMatch from "@/pages/FindMatch";
+import PremiumFeatures from "@/pages/PremiumFeatures";
+import PremiumSuccess from "@/pages/PremiumSuccess";
+import Settings from "@/pages/Settings";
 
 const queryClient = new QueryClient();
 
@@ -39,9 +42,16 @@ const App = () => (
                   <FindMatch />
                 </ProtectedRoute>
               } />
+              <Route path="/premium" element={<PremiumFeatures />} />
+              <Route path="/premium/success" element={<PremiumSuccess />} />
               <Route path="/profile" element={
                 <ProtectedRoute>
                   <div>Profile Page (Coming Soon)</div>
+                </ProtectedRoute>
+              } />
+              <Route path="/settings" element={
+                <ProtectedRoute>
+                  <Settings />
                 </ProtectedRoute>
               } />
               <Route path="*" element={<NotFound />} />

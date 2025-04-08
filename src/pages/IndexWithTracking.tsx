@@ -42,7 +42,7 @@ const IndexWithTracking = () => {
             </p>
           </div>
           
-          <div className="flex flex-wrap justify-center gap-4 mb-10">
+          <div className="flex justify-center gap-4 mb-10">
             <Card className="relative w-full md:w-64 bg-card hover:bg-card/80 transition-colors">
               <div className="absolute -top-3 -right-3">
                 <Zap className="h-6 w-6 text-primary" />

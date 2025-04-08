@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, User } from 'lucide-react';
 import LandingHeader from '@/components/LandingHeader';
 import LandingFooter from '@/components/LandingFooter';
 
@@ -14,8 +14,13 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const [isGuestLoading, setIsGuestLoading] = useState(false);
+  const { login, loginAsGuest } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get the page the user was trying to access, or default to home
+  const from = (location.state as any)?.from?.pathname || '/';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +30,7 @@ export default function Login() {
     try {
       const result = await login(email, password);
       if (result.success) {
-        navigate('/');
+        navigate(from);
       } else {
         setError(result.error || 'Failed to log in');
       }
@@ -34,6 +39,25 @@ export default function Login() {
       console.error(err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setError(null);
+    setIsGuestLoading(true);
+
+    try {
+      const result = await loginAsGuest();
+      if (result.success) {
+        navigate(from);
+      } else {
+        setError(result.error || 'Failed to sign in as guest');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+      console.error(err);
+    } finally {
+      setIsGuestLoading(false);
     }
   };
 
@@ -64,7 +88,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={isLoading}
+                disabled={isLoading || isGuestLoading}
               />
             </div>
 
@@ -82,19 +106,44 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                disabled={isLoading}
+                disabled={isLoading || isGuestLoading}
               />
             </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full" disabled={isLoading || isGuestLoading}>
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
           </form>
 
-          <div className="text-center text-sm">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border"></span>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or</span>
+            </div>
+          </div>
+
+          <Button 
+            variant="outline" 
+            className="w-full" 
+            onClick={handleGuestLogin}
+            disabled={isLoading || isGuestLoading}
+          >
+            {isGuestLoading ? (
+              'Signing in...'
+            ) : (
+              <>
+                <User className="mr-2 h-4 w-4" />
+                Sign in as Guest
+              </>
+            )}
+          </Button>
+
+          <div className="text-center text-sm mt-4">
             <span className="text-muted-foreground">Don't have an account? </span>
-            <Link to="/signup" className="text-primary hover:underline">
-              Sign up
+            <Link to="/signup" className="text-primary hover:underline font-medium">
+              Create one now
             </Link>
           </div>
         </div>

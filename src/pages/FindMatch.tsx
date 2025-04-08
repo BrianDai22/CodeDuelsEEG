@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,7 @@ const mockOpponents = [
 export default function FindMatch() {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searching, setSearching] = useState(false);
   const [searchProgress, setSearchProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export default function FindMatch() {
 
   const startSearch = () => {
     if (!isAuthenticated) {
-      navigate('/login');
+      navigate('/login', { state: { from: location } });
       return;
     }
     setSearching(true);
@@ -68,7 +69,7 @@ export default function FindMatch() {
 
   const challengeOpponent = (opponentId: string) => {
     if (!isAuthenticated) {
-      navigate('/login');
+      navigate('/login', { state: { from: location } });
       return;
     }
     setSelectedOpponent(opponentId);
