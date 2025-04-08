@@ -1,23 +1,25 @@
 import { Button } from '@/components/ui/button';
 import { useNavigate, Link } from 'react-router-dom';
-import { Code, LogOut, User, Search, Crown, Settings, ChevronDown, History } from 'lucide-react';
+import { Code, LogOut, User, Search, Crown, Settings, ChevronDown, History, Shield, HomeIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAdmin } from '@/contexts/AdminContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { HomeIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
-const LandingHeader = () => {
+const PremiumHeader = () => {
   const navigate = useNavigate();
   const { user, logout, isAuthenticated } = useAuth();
+  const { isAdmin, isPremium } = useAdmin();
 
   return (
-    <header className="border-b border-border py-4 px-6">
+    <header className="border-b border-border py-4 px-6 bg-gradient-to-r from-gray-900 to-gray-800 text-white">
       <div className="container mx-auto flex justify-between items-center">
         <div className="flex items-center">
           <Button 
             variant="ghost" 
-            className="p-0 hover:bg-transparent" 
-            onClick={() => navigate('/')}
+            className="p-0 hover:bg-transparent text-white" 
+            onClick={() => navigate('/premium-dashboard')}
           >
             <div className="flex items-center space-x-3">
               <Code className="h-8 w-8 text-primary" />
@@ -27,49 +29,63 @@ const LandingHeader = () => {
         </div>
         
         <nav className="flex items-center space-x-6">
-          <Button variant="link" className="text-lg" onClick={() => navigate('/')}>
+          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/premium-dashboard')}>
             <div className="flex items-center space-x-2">
-              <HomeIcon className="h-5 w-5" />
-              <span>Home</span>
+              <Crown className="h-5 w-5" />
+              <span>Premium Dashboard</span>
             </div>
           </Button>
-          <Button variant="link" className="text-lg" onClick={() => navigate('/leaderboard')}>
+          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/leaderboard')}>
             Leaderboard
           </Button>
-          <Button variant="link" className="text-lg" onClick={() => navigate('/find-match')}>
+          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/find-match')}>
             <div className="flex items-center space-x-2">
               <Search className="h-5 w-5" />
               <span>Find Match</span>
             </div>
           </Button>
-          <Button variant="link" className="text-lg" onClick={() => navigate('/premium')}>
-            <div className="flex items-center space-x-2">
-              <Crown className="h-5 w-5" />
-              <span>Premium</span>
-            </div>
-          </Button>
+          {isAdmin && (
+            <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/admin')}>
+              <div className="flex items-center space-x-2">
+                <Shield className="h-5 w-5" />
+                <span>Admin Panel</span>
+              </div>
+            </Button>
+          )}
         </nav>
         
-        <div className="flex items-center">
+        <div className="flex items-center space-x-4">
+          {isAuthenticated && (
+            <Badge variant="default" className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 text-sm">
+              {isAdmin ? (
+                <>
+                  <Shield className="h-5 w-5 mr-1.5" />
+                  Admin Access
+                </>
+              ) : (
+                <>
+                  <Crown className="h-4 w-4 mr-1" />
+                  Premium Active
+                </>
+              )}
+            </Badge>
+          )}
+          
           {isAuthenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button 
                   variant="outline" 
                   size="lg" 
-                  className="flex items-center space-x-2 transition-colors duration-200 hover:bg-accent text-lg"
+                  className="flex items-center space-x-2 transition-colors duration-200 hover:bg-accent text-lg border-gray-700 text-white"
                 >
                   <div className="flex items-center space-x-2">
-                    {user?.photoURL ? (
-                      <Avatar className="h-7 w-7">
-                        <AvatarImage src={user.photoURL} alt={user.username} />
-                        <AvatarFallback>
-                          <User className="h-5 w-5" />
-                        </AvatarFallback>
-                      </Avatar>
-                    ) : (
-                      <User className="h-6 w-6" />
-                    )}
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={user?.photoURL} alt={user?.username} />
+                      <AvatarFallback>
+                        <User className="h-5 w-5" />
+                      </AvatarFallback>
+                    </Avatar>
                     <span className="hidden md:inline font-medium">{user?.username}</span>
                   </div>
                   <ChevronDown className="h-5 w-5" />
@@ -104,14 +120,14 @@ const LandingHeader = () => {
                 variant="outline" 
                 size="lg" 
                 onClick={() => navigate('/login')}
-                className="px-8 text-lg"
+                className="px-8 text-lg border-gray-700 text-white"
               >
                 Login
               </Button>
               <Button 
                 size="lg" 
                 onClick={() => navigate('/signup')}
-                className="px-8 text-lg"
+                className="px-8 text-lg bg-green-600 hover:bg-green-700"
               >
                 Sign Up
               </Button>
@@ -123,4 +139,4 @@ const LandingHeader = () => {
   );
 };
 
-export default LandingHeader;
+export default PremiumHeader; 

@@ -4,9 +4,8 @@ import { Code, LogOut, User, Search, Crown, Settings, ChevronDown, History } fro
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { HomeIcon } from 'lucide-react';
 
-const LandingHeader = () => {
+const UserHeader = () => {
   const navigate = useNavigate();
   const { user, logout, isAuthenticated } = useAuth();
 
@@ -26,12 +25,9 @@ const LandingHeader = () => {
           </Button>
         </div>
         
-        <nav className="flex items-center space-x-6">
+        <nav className="hidden md:flex items-center space-x-6">
           <Button variant="link" className="text-lg" onClick={() => navigate('/')}>
-            <div className="flex items-center space-x-2">
-              <HomeIcon className="h-5 w-5" />
-              <span>Home</span>
-            </div>
+            Home
           </Button>
           <Button variant="link" className="text-lg" onClick={() => navigate('/leaderboard')}>
             Leaderboard
@@ -60,16 +56,12 @@ const LandingHeader = () => {
                   className="flex items-center space-x-2 transition-colors duration-200 hover:bg-accent text-lg"
                 >
                   <div className="flex items-center space-x-2">
-                    {user?.photoURL ? (
-                      <Avatar className="h-7 w-7">
-                        <AvatarImage src={user.photoURL} alt={user.username} />
-                        <AvatarFallback>
-                          <User className="h-5 w-5" />
-                        </AvatarFallback>
-                      </Avatar>
-                    ) : (
-                      <User className="h-6 w-6" />
-                    )}
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={user?.photoURL} alt={user?.username} />
+                      <AvatarFallback>
+                        <User className="h-5 w-5" />
+                      </AvatarFallback>
+                    </Avatar>
                     <span className="hidden md:inline font-medium">{user?.username}</span>
                   </div>
                   <ChevronDown className="h-5 w-5" />
@@ -123,4 +115,4 @@ const LandingHeader = () => {
   );
 };
 
-export default LandingHeader;
+export default UserHeader; 
