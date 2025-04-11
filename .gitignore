@@ -4,6 +4,8 @@ logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 firebase-debug.log*
 firebase-debug.*.log*
 
@@ -45,7 +47,10 @@ bower_components
 build/Release
 
 # Dependency directories
-node_modules/
+node_modules
+dist
+dist-ssr
+*.local
 
 # Optional npm cache directory
 .npm
@@ -64,6 +69,52 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+!.env.example
 
 # dataconnect generated files
+.dataconnect
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build files
+/build/
+/out/
+/dist/
+
+# Testing
+/coverage
+.nyc_output
+
+# Cache
+.eslintcache
+.npm
+.cache
+.temp
+.parcel-cache
+
+# Production build files
+/dist/
+/build/
+
+# Temp files
+.tmp
+.temp
+
+# Local Netlify folder
+.netlify
+
+# Project-specific
+**/.DS_Store
 .dataconnect

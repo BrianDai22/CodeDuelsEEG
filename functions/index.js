@@ -11,6 +11,7 @@ const {onRequest} = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const functions = require("firebase-functions");
 const Stripe = require("stripe");
+const admin = require("firebase-admin");
 
 // Create and deploy your first functions
 // https://firebase.google.com/docs/functions/get-started
@@ -20,56 +21,35 @@ const Stripe = require("stripe");
 //   response.send("Hello from Firebase!");
 // });
 
+admin.initializeApp();
+const db = admin.database();
+
 // Get config values from Firebase
 const stripeSecretKey = functions.config().stripe.secret_key;
 const appUrl = functions.config().app.url;
+const authorizedAdminEmails = (functions.config().auth?.admin_emails || '').split(',').map(e => e.trim()).filter(Boolean);
+const authorizedPremiumEmails = (functions.config().auth?.premium_emails || '').split(',').map(e => e.trim()).filter(Boolean);
+
+if (!stripeSecretKey) {
+  throw new Error('Stripe secret key is not configured. Run: firebase functions:config:set stripe.secret_key=sk_...');
+}
+
+if (!appUrl) {
+  throw new Error('App URL is not configured. Run: firebase functions:config:set app.url=https://your-app-url.com');
+}
 
 const stripe = new Stripe(stripeSecretKey, {
   apiVersion: "2023-10-16",
 });
 
-exports.createCheckoutSession = functions.https.onRequest(async (req, res) => {
-  // Enable CORS
-  res.set("Access-Control-Allow-Origin", "*");
-  
-  if (req.method === "OPTIONS") {
-    // Send response to OPTIONS requests
-    res.set("Access-Control-Allow-Methods", "POST");
-    res.set("Access-Control-Allow-Headers", "Content-Type");
-    res.set("Access-Control-Max-Age", "3600");
-    res.status(204).send("");
-    return;
-  }
+// Import controllers
+const paymentController = require('./src/controllers/paymentController');
+const userController = require('./src/controllers/userController');
 
-  if (req.method !== "POST") {
-    res.status(405).send("Method Not Allowed");
-    return;
-  }
+// Export payment functions
+exports.createCheckoutSession = paymentController.createCheckoutSession;
+exports.verifyPremiumPayment = paymentController.verifyPremiumPayment;
+exports.getPaymentHistory = paymentController.getPaymentHistory;
 
-  try {
-    const { priceId } = req.body;
-
-    if (!priceId) {
-      res.status(400).json({ error: "Price ID is required" });
-      return;
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: `${appUrl}/premium/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/premium`,
-    });
-
-    res.json({ id: session.id });
-  } catch (error) {
-    console.error("Error creating checkout session:", error);
-    res.status(500).json({ error: "Failed to create checkout session" });
-  }
-});
+// Export user functions
+exports.getUserRole = userController.getUserRole;

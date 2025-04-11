@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -9,14 +8,15 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
-  plugins: [
-    react(),
-    mode === 'development' &&
-    componentTagger(),
-  ].filter(Boolean),
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@features": path.resolve(__dirname, "./src/features"),
+      "@shared": path.resolve(__dirname, "./src/shared"),
+      "@ui": path.resolve(__dirname, "./src/ui"),
+      "@pages": path.resolve(__dirname, "./src/pages"),
+      "@assets": path.resolve(__dirname, "./public"),
     },
   },
 }));
