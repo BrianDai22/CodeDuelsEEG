@@ -13,10 +13,10 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getDatabase, ref, get } from 'firebase/database';
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import CodeTerminal from "@shared/components/CodeTerminal";
-import { Skeleton } from "@ui/feedback/skeleton";
-import { toast as sonnerToast } from "sonner";
+import { Editor } from '@monaco-editor/react';
+import * as Monaco from 'monaco-editor';
 import { ScrollArea } from '@ui/layout/scroll-area';
+import { toast as sonnerToast } from "sonner";
 
 // LeetCode-style problems
 const codingProblems = [
@@ -137,10 +137,10 @@ const DAMAGE_PER_PROBLEM = 34; // Adjusted slightly for 3 problems
 
 interface TestResult {
   passed: boolean;
-  message: string;
-  input?: any;
-  expected?: any;
-  actual?: any;
+  input: any;
+  expectedOutput: any;
+  actualOutput: any;
+  error?: string | null;
 }
 
 // Define initial Python code template structure
@@ -218,6 +218,11 @@ const Battle: React.FC = () => {
   // Current problem
   const currentProblem = problems[currentProblemIndex];
 
+  // Add refs for Monaco editor
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof Monaco | null>(null);
+  const cursorPosition = useRef<Monaco.Position | null>(null);
+
   // Load initial code when problem changes or loads
   useEffect(() => {
     if (currentProblem && !playerCodes[currentProblem.id]) {
@@ -258,35 +263,57 @@ const Battle: React.FC = () => {
 
     const initializeBattle = async () => {
       try {
+        console.log("Initializing battle for lobby:", lobbyCode);
         const { data: lobbyData, error } = await supabase.from('lobbies').select('*').eq('code', lobbyCode).maybeSingle();
+        
         if (!isMounted) return;
         if (error) throw error;
         if (!lobbyData) throw new Error("Lobby not found");
-        if (lobbyData.status !== 'starting' && lobbyData.status !== 'active') throw new Error("Lobby is not ready or has ended");
+        
+        console.log("Lobby data fetched:", lobbyData);
+
+        // Allow both 'starting' and 'active' states
+        if (lobbyData.status !== 'starting' && lobbyData.status !== 'active') {
+          console.error("Invalid lobby status:", lobbyData.status);
+          throw new Error("Lobby is not ready or has ended");
+        }
 
         const playerIsHost = lobbyData.host_id === user.uid;
         const hostId = lobbyData.host_id;
         const oppId = playerIsHost ? lobbyData.opponent_id : hostId;
-        if (!hostId || !oppId) throw new Error("Lobby data is missing host or opponent ID");
+        
+        if (!hostId || !oppId) {
+          console.error("Missing player IDs:", { hostId, oppId });
+          throw new Error("Lobby data is missing host or opponent ID");
+        }
 
+        console.log("Setting up battle state:", { playerIsHost, hostId, oppId });
+        
         setIsHost(playerIsHost);
         setOpponentId(oppId);
-        const opponentActualUsername = await fetchUsername(oppId);
-        setOpponentUsername(opponentActualUsername);
-        setMatchStarted(true);
+        
+        try {
+          const opponentActualUsername = await fetchUsername(oppId);
+          setOpponentUsername(opponentActualUsername);
+        } catch (error) {
+          console.warn("Failed to fetch opponent username:", error);
+          setOpponentUsername('Opponent');
+        }
 
+        // Initialize test results
         const initialTestResults: Record<string, TestResult[]> = {};
         problems.forEach(p => { initialTestResults[p.id] = []; });
         setPlayerTestResults(initialTestResults);
 
+        // Set up battle channel
         const battleChannel = supabase.channel(`battle:${lobbyCode}`)
           .on('broadcast', { event: 'problem_solved' }, ({ payload }) => {
-            if (!isMounted || payload.senderId === user.uid) return; // Ignore own events
-            console.log('Received problem_solved event from opponent:', payload);
+            if (!isMounted || payload.senderId === user.uid) return;
+            console.log('Received problem_solved event:', payload);
             setOpponentCompletedProblems(prev => {
               const updated = [...new Set([...prev, payload.problemId])];
-              const newHealth = Math.max(MAX_HEALTH - (updated.length * DAMAGE_PER_PROBLEM), 0);
-              setPlayerHealth(newHealth); // Player loses health when opponent solves
+              const newHealth = Math.max(playerHealth - DAMAGE_PER_PROBLEM, 0);
+              setPlayerHealth(newHealth);
               return updated;
             });
             sonnerToast.error(`${opponentUsername} Solved a Problem!`, {
@@ -299,38 +326,58 @@ const Battle: React.FC = () => {
             handleGameEnd(payload.winnerId);
           })
           .subscribe((status) => {
-            if (status === 'SUBSCRIBED') console.log(`Successfully subscribed to battle channel: battle:${lobbyCode}`);
-            else console.log(`Battle channel status: ${status}`)
+            console.log(`Battle channel status: ${status}`);
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully subscribed to battle channel');
+      setMatchStarted(true);
+            }
           });
 
         if (!isMounted) return;
         setChannel(battleChannel);
 
+        // Update lobby status to active if we're the host and it's still in starting state
         if (playerIsHost && lobbyData.status === 'starting') {
-          supabase.from('lobbies').update({ status: 'active' }).eq('code', lobbyCode)
-            .then(({ error: updateError }) => {
-              if (updateError) console.error("Error updating lobby status:", updateError);
-              else console.log("Lobby status updated to active.");
-            });
+          console.log("Host updating lobby status to active");
+          const { error: updateError } = await supabase
+            .from('lobbies')
+            .update({ status: 'active' })
+            .eq('code', lobbyCode);
+
+          if (updateError) {
+            console.error("Error updating lobby status:", updateError);
+          } else {
+            console.log("Lobby status updated to active");
+          }
         }
 
       } catch (error: any) {
         if (!isMounted) return;
         console.error("Error initializing battle:", error);
-        toast({ title: "Error Loading Battle", description: error.message || "Failed to load battle details.", variant: "destructive" });
+        toast({ 
+          title: "Error Loading Battle", 
+          description: error.message || "Failed to load battle details.", 
+          variant: "destructive" 
+        });
         navigate('/find-match');
       }
     };
 
+    console.log("Starting battle initialization");
     initializeBattle();
 
     return () => {
+      console.log("Cleaning up battle component");
       isMounted = false;
       if (channel) {
-        supabase.removeChannel(channel).then(() => console.log("Battle channel removed on unmount."));
+        console.log("Removing battle channel");
+        supabase.removeChannel(channel)
+          .then(() => console.log("Battle channel removed"))
+          .catch(err => console.error("Error removing channel:", err));
+        setChannel(null);
       }
     };
-  }, [lobbyCode, user?.uid, navigate, toast]);
+  }, [lobbyCode, user?.uid, navigate, toast, playerHealth]);
 
   // Timer countdown
   useEffect(() => {
@@ -371,25 +418,32 @@ const Battle: React.FC = () => {
     }
   }, [matchEnded, user?.uid, opponentUsername, channel, navigate]);
 
-  // Update win condition check to 3 problems
+  // Update win condition check to require all test cases passed for each completed problem
   useEffect(() => {
     if (matchEnded || !matchStarted || !user || !opponentId) return;
 
-    // Player wins by completing 3 problems
-    if (completedProblems.length >= 3) {
-      console.log("Player reached 3 solved problems. Ending game.");
+    // Check if player has completed all test cases for 3 problems
+    const hasCompletedAllTestCases = completedProblems.length >= 3 && 
+      completedProblems.every(problemId => {
+        const results = playerTestResults[problemId] || [];
+        return results.length > 0 && results.every(r => r.passed);
+      });
+
+    // Player wins by completing all test cases for 3 problems
+    if (hasCompletedAllTestCases) {
+      console.log("Player completed all test cases for 3 problems. Ending game.");
       handleGameEnd(user.uid);
       return;
     }
 
     // Opponent wins by completing 3 problems
     if (opponentCompletedProblems.length >= 3) {
-      console.log("Opponent reached 3 solved problems. Ending game.");
+      console.log("Opponent completed 3 problems. Ending game.");
       handleGameEnd(opponentId);
       return;
     }
 
-    // Keep health-based win conditions as backup/alternative
+    // Keep health-based win conditions as backup
     if (playerHealth <= 0) {
       console.log("Player health reached 0. Ending game.");
       handleGameEnd(opponentId);
@@ -401,15 +455,16 @@ const Battle: React.FC = () => {
       return;
     }
   }, [
-    playerHealth, 
-    opponentHealth, 
-    completedProblems, 
-    opponentCompletedProblems, 
-    matchStarted, 
-    matchEnded, 
-    user?.uid, 
-    opponentId, 
-    handleGameEnd // Dependency array is now correct
+    playerHealth,
+    opponentHealth,
+    completedProblems,
+    opponentCompletedProblems,
+    playerTestResults,
+    matchStarted,
+    matchEnded,
+    user?.uid,
+    opponentId,
+    handleGameEnd
   ]);
 
   // Format time as mm:ss
@@ -430,116 +485,187 @@ const Battle: React.FC = () => {
   };
 
   // Wrap runCode in useCallback and modify signature
-  const runCode = useCallback(async (codeToRun: string) => {
-    if (!currentProblem || !user?.uid || matchEnded || isRunningCode) return;
-    const problemId = currentProblem.id;
+  const runCode = async () => {
     setIsRunningCode(true);
-    setPlayerTestResults(prev => ({ ...prev, [problemId]: [] })); // Clear previous results for this problem
-    setTerminalOutput('Running tests...\n');
-    if (testResultsRef.current) testResultsRef.current.innerHTML = ''; // Clear visual results
+    setTerminalOutput('Running code...\n');
+    
+    try {
+      const sourceCode = playerCodes[currentProblem.id] || getInitialCode(currentProblem.id);
+      
+      // Run each test case
+      const results = await Promise.all(currentProblem.testCases.map(async (testCase, index) => {
+        // Format the test code
+        const testCodeSetup = `
+class Solution:
+${sourceCode.split('class Solution:')[1].replace(/^/gm, '    ')}
 
-    const results: TestResult[] = [];
-    // Mock execution logic - Made slightly more robust
-    for (let i = 0; i < currentProblem.testCases.length; i++) {
-      const testCase = currentProblem.testCases[i];
-      await new Promise(resolve => setTimeout(resolve, 150)); // Simulate delay
-      let passed = false; let output = null; let errorMessage = null;
-      try {
-        // Mocking two-sum logic: Check for nested loops and addition comparison
-        if (problemId === 'two-sum' && 
-            /for\s+\w+\s+in\s+range/.test(codeToRun) && // Checks for loop structure
-            /nums\[\w+\]\s*\+\s*nums\[\w+\]\s*==\s*target/.test(codeToRun) && // Checks for sum comparison
-            codeToRun.includes('return [')) 
-        {
-          // Basic check for expected output (can be improved further)
-          passed = JSON.stringify(testCase.expected) === JSON.stringify([0, 1]) || 
-                   JSON.stringify(testCase.expected) === JSON.stringify([1, 2]) || 
-                   JSON.stringify(testCase.expected) === JSON.stringify([0, 2]); // Add more expected if needed
-          output = passed ? testCase.expected : "Incorrect Mock Output";
-        } 
-        // Mocking reverse-string logic: Check for while loop and swap pattern
-        else if (problemId === 'reverse-string' && 
-                 codeToRun.includes('while') && 
-                 /s\[\w+\],\s*s\[\w+\]\s*=\s*s\[\w+\],\s*s\[\w+\]/.test(codeToRun)) // Check for swap pattern
-        {
-          passed = true; 
-          output = testCase.expected; 
-        }
-        // Mocking valid-palindrome logic: Check for alphanumeric check, lowercasing, and loop/pointers
-        else if (problemId === 'valid-palindrome' && 
-                 codeToRun.includes('isalnum') && 
-                 codeToRun.includes('lower') &&
-                 (codeToRun.includes('while') || (codeToRun.includes('left') && codeToRun.includes('right'))))
-        {
-          passed = true; 
-          output = testCase.expected; 
-        } 
-        // Default mock fail if none of the above patterns match
-        else {
-          output = "Mock Execution Failed: Pattern not recognized";
-        }
-        
-        // Simulate potential runtime error
-        if (codeToRun.includes('raise Exception')) { // Example error trigger
-          throw new Error("Simulated Runtime Error");
+# Create test instance and run
+solution = Solution()
+result = solution.${currentProblem.methodName}(${testCase.input.map(arg => JSON.stringify(arg)).join(', ')})
+print(repr(result))
+`;
+
+        console.log('Executing test case:', index + 1);
+        console.log('Test code:', testCodeSetup);
+
+        const { data, error } = await supabase.functions.invoke('execute-code', {
+          body: JSON.stringify({
+            code: testCodeSetup,
+            language: "python"
+          })
+        });
+
+        if (error) {
+          console.error('Error from edge function:', error);
+          throw error;
         }
 
-      } catch (error: any) { 
-        passed = false; 
-        output = "Error"; 
-        errorMessage = error.message || "Unknown execution error"; 
+        if (!data) {
+          throw new Error('No response received from code execution');
+        }
+
+        console.log('Raw response from execution:', data);
+
+        // Parse the output and error
+        const stdout = data.stdout?.trim() || '';
+        const stderr = data.stderr?.trim() || '';
+        const error_output = stderr || data.error || '';
+
+        let parsedOutput;
+        try {
+          // Try to evaluate the output as a Python literal
+          parsedOutput = stdout ? eval('(' + stdout + ')') : null;
+        } catch (e) {
+          parsedOutput = stdout;
+        }
+
+        // Compare with expected output
+        const expectedOutput = testCase.expected;
+        const passed = JSON.stringify(parsedOutput) === JSON.stringify(expectedOutput);
+
+        return {
+          passed,
+          input: testCase.input,
+          expectedOutput: expectedOutput,
+          actualOutput: parsedOutput,
+          error: error_output || null
+        };
+      }));
+
+      // Update test results
+      setPlayerTestResults(prev => ({
+        ...prev,
+        [currentProblem.id]: results
+      }));
+
+      // Calculate summary
+      const passedCount = results.filter(r => r.passed).length;
+      const totalCount = results.length;
+      const allPassed = passedCount === totalCount;
+
+      // Update terminal output with summary
+      setTerminalOutput(prev => `${prev}\n${'-'.repeat(40)}\nTest Results:\n${passedCount}/${totalCount} test cases passed\n\n${
+        results.map((result, i) => 
+          `Test Case ${i + 1}: ${result.passed ? '✅ Passed' : '❌ Failed'}\n` +
+          `Input: ${JSON.stringify(result.input)}\n` +
+          `Expected: ${JSON.stringify(result.expectedOutput)}\n` +
+          `Actual: ${JSON.stringify(result.actualOutput)}\n` +
+          (result.error ? `Error: ${result.error}\n` : '') +
+          '-'.repeat(20)
+        ).join('\n')
+      }`);
+
+      // Handle completion if all tests pass
+      if (allPassed && !completedProblems.includes(currentProblem.id)) {
+        setCompletedProblems(prev => {
+          const updated = [...new Set([...prev, currentProblem.id])];
+          const newOpponentHealth = Math.max(opponentHealth - DAMAGE_PER_PROBLEM, 0);
+          setOpponentHealth(newOpponentHealth);
+          
+          // Broadcast the solve event
+          if (channel) {
+            channel.send({
+              type: 'broadcast',
+              event: 'problem_solved',
+              payload: { problemId: currentProblem.id, senderId: user?.uid }
+            });
+          }
+
+          sonnerToast.success("Problem Solved!", {
+            description: `You dealt ${DAMAGE_PER_PROBLEM}% damage to your opponent!`,
+          });
+
+          return updated;
+        });
       }
-      results.push({ 
-        passed, 
-        message: passed ? "Passed" : (errorMessage ? `Error: ${errorMessage}` : "Failed"), 
-        input: testCase.input, 
-        expected: testCase.expected, 
-        actual: errorMessage ? "Error" : output 
-      });
+
+    } catch (err: any) {
+      console.error('Error running code:', err);
+      setTerminalOutput(prev => `${prev}\nError executing code: ${err.message}\n\nPlease check your code for syntax errors.`);
+    } finally {
+      setIsRunningCode(false);
     }
+  };
 
-    setPlayerTestResults(prev => ({ ...prev, [problemId]: results })); // Update results state
-    const passedTests = results.filter(r => r.passed).length;
-    const totalTests = results.length;
-    const failedTests = results.filter(r => !r.passed);
+  // Editor lifecycle
+  useEffect(() => {
+    if (!monacoRef.current) return;
+    
+    const model = monacoRef.current.editor.createModel(
+      playerCodes[currentProblem.id] || getInitialCode(currentProblem.id),
+      'python'
+    );
 
-    // Update Terminal Output Summary
-    let summary = `Run Results for ${currentProblem.title}:\n`;
-    summary += `----------------------------------------\n`;
-    summary += `${passedTests} / ${totalTests} Test Cases Passed ${passedTests === totalTests ? '✅' : '❌'}\n`;
-    summary += `----------------------------------------\n\n`;
-    if (failedTests.length > 0) {
-      summary += "Failed Test Cases:\n";
-      failedTests.forEach((result) => {
-        summary += `[FAIL] Input: ${JSON.stringify(result.input)}\n`;
-        if (result.message.startsWith('Error:')) summary += `  Error: ${result.message.substring(7)}\n`;
-        else summary += `  Expected: ${JSON.stringify(result.expected)}, Actual: ${JSON.stringify(result.actual)}\n`;
-        summary += `\n`;
-      });
-    }
-    if (passedTests === totalTests && totalTests > 0) summary += "All tests passed successfully!\n";
-    setTerminalOutput(summary);
-
-    // Problem solved logic
-    if (passedTests === totalTests && totalTests > 0 && !completedProblems.includes(problemId)) {
-      const newCompletedProblems = [...new Set([...completedProblems, problemId])];
-      setCompletedProblems(newCompletedProblems);
-      const newOpponentHealth = Math.max(opponentHealth - DAMAGE_PER_PROBLEM, 0);
-      setOpponentHealth(newOpponentHealth); // Damage opponent
-      if (channel) {
-        channel.send({ type: 'broadcast', event: 'problem_solved', payload: { senderId: user.uid, problemId: problemId } })
-          .catch(err => console.error("Error broadcasting problem_solved:", err));
+    if (editorRef.current) {
+      editorRef.current.setModel(model);
+      // Restore cursor position if we have it saved
+      if (cursorPosition.current) {
+        editorRef.current.setPosition(cursorPosition.current);
+        editorRef.current.revealPositionInCenter(cursorPosition.current);
       }
-      sonnerToast.success("Problem Solved!", { description: `Opponent takes ${DAMAGE_PER_PROBLEM}% damage.` });
-    } else if (passedTests > 0) {
-      sonnerToast.info("Partial Success", { description: `${passedTests} out of ${totalTests} tests passed.` });
-    } else if (totalTests > 0) {
-      sonnerToast.error("Tests Failed", { description: "No tests passed. Check terminal & results." });
     }
 
-    setIsRunningCode(false);
-    if (terminalRef.current) terminalRef.current.scrollTop = 0;
-  }, [currentProblem, user, matchEnded, isRunningCode, completedProblems, opponentHealth, channel, terminalRef, setPlayerTestResults, setTerminalOutput, setCompletedProblems, setOpponentHealth, setIsRunningCode]);
+    return () => {
+      model.dispose();
+    };
+  }, [currentProblem.id, monacoRef.current]);
+
+  const handleEditorDidMount = (editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    
+    // Set initial options
+    editor.updateOptions({
+      minimap: { enabled: false },
+      fontSize: 14,
+      lineNumbers: 'on',
+      roundedSelection: false,
+      scrollBeyondLastLine: false,
+      readOnly: false,
+      theme: 'vs-dark',
+    });
+
+    // Add keyboard shortcut for Cmd/Ctrl + Enter
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+      void runCode();
+    });
+
+    // Save cursor position on change
+    editor.onDidChangeCursorPosition(e => {
+      cursorPosition.current = e.position;
+    });
+
+    // Handle content changes
+    editor.onDidChangeModelContent(() => {
+      if (currentProblem?.id) {
+        const newCode = editor.getValue();
+        setPlayerCodes(prev => ({
+          ...prev,
+          [currentProblem.id]: newCode
+        }));
+      }
+    });
+  };
 
   // Loading screen
   if (!matchStarted && !matchEnded) {
@@ -554,7 +680,7 @@ const Battle: React.FC = () => {
       </div>
     );
   }
-  
+
   // Game end screen
   if (matchEnded) {
     let endTitle = "";
@@ -601,15 +727,15 @@ const Battle: React.FC = () => {
            <Swords className="h-6 w-6 text-muted-foreground"/>
            {/* Player */}
            <div className="flex flex-col items-start">
-               <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
                  <User className="h-4 w-4 text-blue-500"/>
                  <span className="text-sm font-medium text-muted-foreground">You ({completedProblems.length}/3)</span>
               </div>
               <Progress value={playerHealth} className="w-40 h-2 mt-1 bg-blue-500/20 [&>*]:bg-blue-500" />
            </div>
-        </div>
-      </div>
-
+            </div>
+          </div>
+          
       {/* Main Content Area (3 Columns) */}
       <div className="flex-1 flex gap-2 overflow-hidden">
         {/* Left Column: Problems */} 
@@ -659,8 +785,8 @@ const Battle: React.FC = () => {
                            {ex.explanation ? `\nExplanation: ${ex.explanation}` : ''}
                          </pre>
                        ))}
-                     </div>
-                  </div>
+          </div>
+        </div>
                )}
             </ScrollArea>
           </Tabs>
@@ -672,22 +798,54 @@ const Battle: React.FC = () => {
              <CardTitle className="text-lg flex items-center gap-2">
                <Code className="h-5 w-5"/> Solution Code
              </CardTitle>
-             <span className="text-xs text-muted-foreground">Language: Python</span>
+            <div className="flex items-center gap-2">
+               <span className="text-xs text-muted-foreground">Language: Python</span>
+               <Button 
+                 size="sm" 
+                 onClick={runCode}
+                 disabled={isRunningCode}
+                 className="flex items-center gap-1"
+               >
+                 {isRunningCode ? (
+                   <>
+                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                     Running...
+                   </>
+                 ) : (
+                   <>
+                     <Play className="h-4 w-4" />
+                     Run Code
+                   </>
+                 )}
+               </Button>
+             </div>
           </CardHeader>
            <div className="flex-1 overflow-hidden p-1">
              {currentProblem ? (
-                <CodeTerminal
-                  value={playerCodes[currentProblem.id] || getInitialCode(currentProblem.id)} 
-                  onChange={updateCurrentCode}
-                  language="python"
-                  onCmdEnter={runCode}
-                />
+                <div className="h-full w-full">
+                  <Editor
+                    height="100%"
+                    defaultLanguage="python"
+                    defaultValue={playerCodes[currentProblem.id] || getInitialCode(currentProblem.id)}
+                    onMount={handleEditorDidMount}
+                    options={{
+                      automaticLayout: true,
+                      scrollBeyondLastLine: false,
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      lineNumbers: 'on',
+                      roundedSelection: false,
+                      readOnly: false,
+                      theme: 'vs-dark',
+                    }}
+                  />
+              </div>
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   Select a problem.
-                </div>
+            </div>
               )}
-           </div>
+          </div>
         </Card>
 
         {/* Right Column: Output */} 
@@ -722,32 +880,42 @@ const Battle: React.FC = () => {
                <div className="h-full flex flex-col">
                  <div className="px-3 py-1 bg-muted/50 border-b text-sm font-medium">
                     <Zap className="h-4 w-4 inline-block mr-1"/> Test Results
-                 </div>
+            </div>
                   <ScrollArea className="flex-1 p-2 space-y-2">
                      {isRunningCode && (
                         <div className="flex items-center justify-center h-full">
                            <p className="text-sm text-muted-foreground animate-pulse">Running tests...</p>
-                        </div>
+          </div>
                      )} 
                      {!isRunningCode && currentProblem && playerTestResults[currentProblem.id]?.length > 0 ? (
-                         playerTestResults[currentProblem.id].map((result, index) => (
-                            <Card key={index} className={`border-l-4 ${result.passed ? 'border-green-500' : 'border-red-500'} overflow-hidden`}>
-                              <CardHeader className="p-2">
-                                <CardTitle className={`text-sm font-medium flex items-center gap-1 ${result.passed ? 'text-green-600' : 'text-red-600'}`}>
-                                  {result.passed ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                                  Test Case {index + 1}: {result.passed ? 'Passed' : 'Failed'}
-                                </CardTitle>
-                              </CardHeader>
-                              {!result.passed && (
-                                <CardContent className="p-2 pt-0 text-xs bg-muted/30">
-                                  <p><span className="font-semibold">Input:</span> {JSON.stringify(result.input)}</p>
-                                  <p><span className="font-semibold">Expected:</span> {JSON.stringify(result.expected)}</p>
-                                  <p><span className="font-semibold">Actual:</span> {JSON.stringify(result.actual)}</p>
-                                  {result.message && result.message !== 'Failed' && <p><span className="font-semibold">Msg:</span> {result.message}</p>}
-                                </CardContent>
-                              )}
-                            </Card>
-                         ))
+                         <>
+                           <div className="mb-3 p-2 bg-muted/30 rounded-lg">
+                             <p className="text-sm font-medium">
+                               Test Results Summary: {playerTestResults[currentProblem.id].filter(r => r.passed).length}/{playerTestResults[currentProblem.id].length} Passed
+                             </p>
+                             {completedProblems.includes(currentProblem.id) && (
+                               <p className="text-xs text-green-500 mt-1">✓ Problem Completed!</p>
+                )}
+              </div>
+                           {playerTestResults[currentProblem.id].map((result, index) => (
+                             <Card key={index} className={`border-l-4 ${result.passed ? 'border-green-500' : 'border-red-500'} overflow-hidden`}>
+                               <CardHeader className="p-2">
+                                 <CardTitle className={`text-sm font-medium flex items-center gap-1 ${result.passed ? 'text-green-600' : 'text-red-600'}`}>
+                                   {result.passed ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                                   Test Case {index + 1}: {result.passed ? 'Passed' : 'Failed'}
+                                 </CardTitle>
+                               </CardHeader>
+                               {!result.passed && (
+                                 <CardContent className="p-2 pt-0 text-xs bg-muted/30">
+                                   <p><span className="font-semibold">Input:</span> {JSON.stringify(result.input)}</p>
+                                   <p><span className="font-semibold">Expected:</span> {JSON.stringify(result.expectedOutput)}</p>
+                                   <p><span className="font-semibold">Actual:</span> {JSON.stringify(result.actualOutput)}</p>
+                                   {result.error && <p><span className="font-semibold">Error:</span> {result.error}</p>}
+            </CardContent>
+                               )}
+                             </Card>
+                           ))}
+                         </>
                       ) : (
                         !isRunningCode && <p className="text-sm text-muted-foreground p-4 text-center">Run code to see test results here.</p>
                       )}
@@ -755,8 +923,8 @@ const Battle: React.FC = () => {
                </div>
             </Allotment.Pane>
           </Allotment>
-        </Card>
-      </div>
+          </Card>
+        </div>
     </div>
   );
 };
