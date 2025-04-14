@@ -42,6 +42,12 @@ const LandingHeader = () => {
               <span>Find Match</span>
             </div>
           </Button>
+          <Button variant="link" className="text-lg" onClick={() => navigate('/code-editor')}>
+            <div className="flex items-center space-x-2">
+              <Code className="h-5 w-5" />
+              <span>Code Editor</span>
+            </div>
+          </Button>
           <Button variant="link" className="text-lg" onClick={() => navigate('/premium')}>
             <div className="flex items-center space-x-2">
               <Crown className="h-5 w-5" />

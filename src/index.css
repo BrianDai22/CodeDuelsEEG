@@ -1,3 +1,5 @@
+/* Import Monaco Editor CSS */
+@import 'monaco-editor/min/vs/editor/editor.main.css';
 
 @tailwind base;
 @tailwind components;
@@ -5,33 +7,39 @@
 
 @layer base {
   :root {
-    --background: 230 14% 10%;
-    --foreground: 210 40% 98%;
+    --background: 230 14% 10%;     /* Dark blueish-gray */
+    --foreground: 210 40% 98%;     /* Light gray/white */
 
-    --card: 230 14% 12%;
+    --card: 230 14% 12%;           /* Slightly darker blueish-gray */
     --card-foreground: 210 40% 98%;
 
     --popover: 230 14% 12%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 217 91% 60%;
+    --primary: 217 91% 60%;       /* Bright blue */
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 270 95% 65%;
+    --secondary: 270 95% 65%;     /* Bright purple */
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 230 14% 20%;
-    --muted-foreground: 210 40% 80%;
+    --muted: 230 14% 20%;         /* Darker muted blueish-gray */
+    --muted-foreground: 210 40% 80%; /* Lighter muted gray */
 
-    --accent: 270 95% 65%;
+    --accent: 270 95% 65%;         /* Bright purple */
     --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 84.2% 60.2%; /* Red */
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 25%;
+    --success: 142.1 76.2% 36.3%; /* Green */
+    --success-foreground: 210 40% 98%;
+
+    --warning: 47.9 95.8% 53.1%; /* Yellow */
+    --warning-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 25%;    /* Medium dark blueish-gray */
     --input: 214.3 31.8% 25%;
-    --ring: 217 91% 60%;
+    --ring: 217 91% 60%;           /* Bright blue */
 
     --radius: 0.5rem;
 
@@ -109,4 +117,21 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Additional custom styles */
+.allotment-module_splitView__qa3vb > .allotment-module_sashContainer__f4FD0 > .allotment-module_sash__KxELD {
+  background-color: hsl(var(--border));
+  width: 2px !important; /* Make sash thinner */
+  height: 2px !important;
+}
+
+.allotment-module_splitView__qa3vb > .allotment-module_sashContainer__f4FD0 > .allotment-module_sash__KxELD:hover {
+  background-color: hsl(var(--primary));
+}
+
+/* Ensure Monaco Editor respects container size */
+.monaco-editor {
+  width: 100% !important;
+  height: 100% !important;
 }

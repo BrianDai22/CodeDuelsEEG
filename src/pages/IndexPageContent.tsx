@@ -39,6 +39,9 @@ const IndexPageContent = () => {
             <Button size="lg" variant="outline" className="px-8 py-5 text-lg" onClick={() => navigate('/leaderboard')}>
               View Leaderboard
             </Button>
+            <Button size="lg" variant="secondary" className="px-8 py-5 text-lg" onClick={() => navigate('/code-editor')}>
+              Python Code Editor
+            </Button>
           </div>
         </div>
       </section>

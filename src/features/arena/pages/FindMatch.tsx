@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { useAdmin } from '@shared/context/AdminContext';
 import { Button } from '@ui/button';
+import { Input } from '@ui/form/input';
 import { Card } from '@ui/data/card';
 import { Badge } from '@ui/data/badge';
 import LandingHeader from '@shared/components/LandingHeader';
@@ -10,20 +11,15 @@ import PremiumHeader from '@shared/components/PremiumHeader';
 import UserHeader from '@shared/components/UserHeader';
 import GuestHeader from '@shared/components/GuestHeader';
 import LandingFooter from '@shared/components/LandingFooter';
-import { Search, Trophy, LogIn, UserPlus, Crown, Shield } from 'lucide-react';
-
-const mockOpponents = [
-  { id: '1', username: 'CodeMaster', tier: 'Diamond', rating: 1850, winRate: '68%', online: true },
-  { id: '2', username: 'AlgorithmWizard', tier: 'Platinum', rating: 1650, winRate: '62%', online: true },
-  { id: '3', username: 'SyntaxNinja', tier: 'Gold', rating: 1450, winRate: '55%', online: true },
-  { id: '4', username: 'ByteBoss', tier: 'Bronze', rating: 1050, winRate: '42%', online: true },
-];
+import { Search, Trophy, LogIn, UserPlus, Crown, Shield, Copy } from 'lucide-react';
+import { useToast } from '@shared/hooks/ui/use-toast';
+// Supabase import
+import { supabase } from '@shared/config/supabase';
 
 export default function FindMatch() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { isAdmin } = useAdmin();
   const [isPremium, setIsPremium] = useState(() => {
-    // Initialize from localStorage
     const userProfile = localStorage.getItem('userProfile');
     if (userProfile) {
       const profile = JSON.parse(userProfile);
@@ -31,58 +27,149 @@ export default function FindMatch() {
     }
     return false;
   });
-  const [difficulty, setDifficulty] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  useEffect(() => {
-    if (searching) {
-      const timer = setTimeout(() => {
-        setSearching(false);
-        if (difficulty) {
-          navigate(`/battle?difficulty=${difficulty.toLowerCase()}`);
-        }
-      }, 2000);
+  const [lobbyMode, setLobbyMode] = useState<'create' | 'join' | null>(null);
+  const [lobbyCodeInput, setLobbyCodeInput] = useState('');
+  const [createdLobbyCode, setCreatedLobbyCode] = useState<string | null>(null);
+  const [isCreatingLobby, setIsCreatingLobby] = useState(false);
+  const [isJoiningLobby, setIsJoiningLobby] = useState(false);
 
-      return () => clearTimeout(timer);
-    }
-  }, [searching, navigate, difficulty]);
+  const generateLobbyCode = () => {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  };
 
-  const startSearch = () => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-    if (difficulty) {
-      setSearching(true);
+  const handleCreateLobby = async () => {
+    setIsCreatingLobby(true);
+    setLobbyMode('create');
+    setCreatedLobbyCode(null);
+    setLobbyCodeInput('');
+
+    const newCode = generateLobbyCode();
+    console.log("Creating lobby with new code:", newCode, "and host ID:", user?.uid || `guest_${Date.now()}`);
+
+    try {
+      const { error } = await supabase
+        .from('lobbies')
+        .insert({
+          code: newCode,
+          host_id: user?.uid || `guest_${Date.now()}`, // Use Firebase UID or fallback to guest ID
+          creator_name: user?.displayName || user?.email || 'Anonymous Host', // Use actual user info
+          status: 'waiting',
+        });
+
+      if (error) throw error;
+
+      setCreatedLobbyCode(newCode);
+      toast({ title: "Lobby Created!", description: `Share the code: ${newCode}` });
+      console.log(`Navigating host to lobby: /lobby/${newCode}`);
+      navigate(`/lobby/${newCode}`);
+
+    } catch (error: any) {
+      console.error("Error creating Supabase lobby: ", error);
+      console.error("Supabase error message: ", error?.message);
+      console.error("Supabase error details: ", error?.details);
+      console.error("Supabase error hint: ", error?.hint);
+
+      let userMessage = "Failed to create lobby. Please try again.";
+      if (error.message?.includes('duplicate key value violates unique constraint')) {
+          userMessage = "Failed to create lobby. Generated code already exists. Please try again.";
+      } else if (error.message?.includes('check constraint')) {
+          userMessage = "Failed to create lobby due to invalid data.";
+      } else if (error.details?.includes('violates row-level security policy')) { // Check for RLS
+          userMessage = "You do not have permission to create a lobby.";
+      } else if (error.message) { // Use the error message if available
+          userMessage = `Failed to create lobby: ${error.message}`;
+      }
+      toast({ title: "Error Creating Lobby", description: userMessage, variant: "destructive" });
+      setLobbyMode(null);
+    } finally {
+      setIsCreatingLobby(false);
     }
   };
 
-  const getTierColor = (tier: string) => {
-    switch (tier) {
-      case 'Diamond': return 'bg-blue-500';
-      case 'Platinum': return 'bg-gray-400';
-      case 'Gold': return 'bg-yellow-500';
-      case 'Bronze': return 'bg-amber-700';
-      default: return 'bg-gray-200';
+  const handleInitiateJoin = () => {
+    setLobbyMode('join');
+    setCreatedLobbyCode(null);
+    setLobbyCodeInput('');
+  };
+
+  const handleJoinLobby = async () => {
+    const codeToJoin = lobbyCodeInput.toUpperCase().trim();
+    if (!codeToJoin || codeToJoin.length !== 6) {
+       toast({ title: "Invalid Code", description: "Please enter a 6-character lobby code.", variant: "destructive" });
+      return;
     }
+    setIsJoiningLobby(true);
+    console.log("Attempting to join lobby with code:", codeToJoin);
+
+    try {
+      const { data: lobbyData, error: selectError } = await supabase
+        .from('lobbies')
+        .select('*')
+        .eq('code', codeToJoin)
+        .maybeSingle();
+
+      if (selectError) throw new Error("Failed to check lobby status.");
+      if (!lobbyData) throw new Error(`Lobby ${codeToJoin} does not exist.`);
+
+      if (lobbyData.status !== 'waiting' || lobbyData.opponent_id) {
+        throw new Error(`Lobby ${codeToJoin} is not available to join.`);
+      }
+
+      const { error: updateError } = await supabase
+        .from('lobbies')
+        .update({
+          opponent_id: user?.uid || `guest_${Date.now()}`, // Use Firebase UID or fallback
+          opponent_name: user?.displayName || user?.email || 'Anonymous Player', // Use actual user info
+          status: 'ready'
+        })
+        .eq('code', codeToJoin);
+
+      if (updateError) throw new Error("Failed to join the lobby.");
+
+      toast({ title: "Joining Lobby...", description: `Connecting to lobby ${codeToJoin}` });
+      navigate(`/lobby/${codeToJoin}`);
+
+    } catch (error: any) {
+      console.error("Error joining Supabase lobby: ", error);
+      toast({ title: "Error Joining Lobby", description: error.message || "Please check the code and try again.", variant: "destructive" });
+      setIsJoiningLobby(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      toast({ title: "Lobby Code Copied!", description: "Share it with your friend." });
+    }, (err) => {
+      console.error('Failed to copy lobby code: ', err);
+      toast({ title: "Copy Failed", description: "Could not copy code to clipboard.", variant: "destructive" });
+    });
+  };
+
+  const renderHeader = () => {
+    if (!isAuthenticated) return <GuestHeader />;
+    if (isPremium) return <PremiumHeader />;
+    return <UserHeader />;
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {isPremium ? <PremiumHeader /> : <LandingHeader />}
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-muted/40">
+      {renderHeader()}
       
-      <main className="flex-grow container mx-auto py-6 px-4">
-        <div className="flex justify-between items-center mb-6">
+      <main className="flex-grow container mx-auto py-8 px-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold">Find a Match</h1>
-            <p className="text-muted-foreground">Challenge other coders in real-time</p>
+            <h1 className="text-3xl font-bold mb-1">Multiplayer Lobby</h1>
+            <p className="text-muted-foreground">Create a private lobby or join a friend's.</p>
           </div>
           
-          <div className="flex items-center gap-3">
-            {isPremium && (
-              <Badge variant="default" className="bg-green-500/80 hover:bg-green-600/80 text-white px-3 py-1.5 text-sm">
-                {isAdmin ? (
+          <div className="flex items-center gap-3 mt-4 sm:mt-0">
+            {isAuthenticated && isPremium && (
+              <Badge className="bg-green-500/80 hover:bg-green-600/80 text-white px-3 py-1.5 text-sm cursor-default">
+                 {isAdmin ? (
                   <>
                     <Shield className="h-5 w-5 mr-1.5" />
                     Admin Access
@@ -98,51 +185,100 @@ export default function FindMatch() {
           </div>
         </div>
         
-        <div className="max-w-2xl mx-auto">
-          <Card className="p-6">
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Select Difficulty</h2>
-                <div className="grid grid-cols-3 gap-4">
-                  <Button
-                    variant={difficulty === 'Easy' ? 'default' : 'outline'}
-                    onClick={() => setDifficulty('Easy')}
-                    className="w-full"
-                  >
-                    Easy
-                  </Button>
-                  <Button
-                    variant={difficulty === 'Medium' ? 'default' : 'outline'}
-                    onClick={() => setDifficulty('Medium')}
-                    className="w-full"
-                  >
-                    Medium
-                  </Button>
-                  <Button
-                    variant={difficulty === 'Hard' ? 'default' : 'outline'}
-                    onClick={() => setDifficulty('Hard')}
-                    className="w-full"
-                  >
-                    Hard
-                  </Button>
-                </div>
-              </div>
+        <div className="max-w-md mx-auto">
+          <Card className="p-6 shadow-lg">
+            <div className="space-y-5">
+              {!lobbyMode && !createdLobbyCode && (
+                <Button
+                  className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white transition-all duration-300 ease-in-out transform hover:scale-105"
+                  size="lg"
+                  onClick={handleCreateLobby}
+                  disabled={isCreatingLobby}
+                >
+                  {isCreatingLobby ? (
+                    <>
+                      <Search className="mr-2 h-4 w-4 animate-spin" />
+                      Creating Lobby...
+                    </>
+                  ) : (
+                     'Create Private Lobby'
+                  )}
+                </Button>
+              )}
 
-              <Button
-                className="w-full bg-gradient-to-r from-primary to-secondary hover:opacity-90"
-                size="lg"
-                disabled={!difficulty || searching}
-                onClick={startSearch}
-              >
-                {searching ? (
-                  <>
-                    <Search className="mr-2 h-4 w-4 animate-spin" />
-                    Finding Match...
-                  </>
-                ) : (
-                  'Start Matchmaking'
-                )}
-              </Button>
+              {createdLobbyCode && lobbyMode === 'create' && (
+                <div className="text-center p-4 border border-dashed rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground mb-2">Your Lobby is Ready!</p>
+                  <p className="text-xs text-muted-foreground mb-3">Share this code with your friend:</p>
+                  <div className="flex items-center justify-center gap-2 bg-background p-3 rounded-md">
+                    <span className="text-2xl font-bold tracking-widest font-mono select-all text-primary">{createdLobbyCode}</span>
+                    <Button variant="ghost" size="icon" onClick={() => copyToClipboard(createdLobbyCode)} aria-label="Copy lobby code">
+                      <Copy className="h-5 w-5 text-muted-foreground hover:text-primary" />
+                    </Button>
+                  </div>
+                   <p className="text-xs text-muted-foreground mt-3 animate-pulse">Waiting for opponent to join...</p>
+                   <Button variant="link" size="sm" onClick={() => { setCreatedLobbyCode(null); setLobbyMode(null); /* TODO: Delete lobby in Supabase */ }} className="mt-2 text-destructive hover:text-destructive/80">Cancel Lobby</Button>
+                </div>
+              )}
+
+              {!createdLobbyCode && !lobbyMode && (
+                 <div className="relative my-4">
+                   <div className="absolute inset-0 flex items-center">
+                     <span className="w-full border-t" />
+                   </div>
+                   <div className="relative flex justify-center text-xs uppercase">
+                     <span className="bg-card px-2 text-muted-foreground">
+                       Or
+                     </span>
+                   </div>
+                 </div>
+               )}
+
+               {!lobbyMode && !createdLobbyCode && (
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  size="lg"
+                  onClick={handleInitiateJoin}
+                  disabled={isJoiningLobby || isCreatingLobby}
+                >
+                  Join Lobby with Code
+                </Button>
+              )}
+
+               {lobbyMode === 'join' && (
+                <div className="space-y-3">
+                   <p className="text-sm text-center text-muted-foreground">Enter the 6-character code shared by your friend.</p>
+                   <div className="flex flex-col sm:flex-row gap-2">
+                    <Input
+                      id="lobby-code-input"
+                      placeholder="ABCDEF"
+                      value={lobbyCodeInput}
+                      onChange={(e) => setLobbyCodeInput(e.target.value.toUpperCase().trim())}
+                      className="flex-grow text-center sm:text-left font-mono tracking-widest"
+                      maxLength={6}
+                      autoFocus
+                      aria-label="Lobby Code Input"
+                    />
+                    <Button
+                       onClick={handleJoinLobby}
+                       disabled={isJoiningLobby || !lobbyCodeInput || lobbyCodeInput.length !== 6}
+                       className="w-full sm:w-auto"
+                       aria-controls="lobby-code-input"
+                    >
+                      {isJoiningLobby ? (
+                        <>
+                          <Search className="mr-2 h-4 w-4 animate-spin" />
+                          Joining...
+                        </>
+                      ) : (
+                        'Join'
+                      )}
+                    </Button>
+                  </div>
+                   <Button variant="link" size="sm" onClick={() => setLobbyMode(null)} className="w-full text-muted-foreground hover:text-foreground/80">Back</Button>
+                </div>
+              )}
             </div>
           </Card>
         </div>
