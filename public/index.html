@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Security headers -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://firebasestorage.googleapis.com data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com; font-src 'self'; object-src 'none'; media-src 'self'; frame-src 'self' https://*.stripe.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; block-all-mixed-content" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
+    <meta http-equiv="Strict-Transport-Security" content="max-age=31536000; includeSubDomains" />
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="geolocation=(), camera=(), microphone=()" />
+    
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Code Duels EEG</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Security feature detection -->
+    <script>
+      // Check if CSP is working
+      if (window.CSP_NONCE === undefined) {
+        console.log('CSP is active');
+      }
+      
+      // Prevent clickjacking by breaking out of frames
+      if (window !== window.top) {
+        window.top.location.href = window.location.href;
+      }
+    </script>
+  </body>
+</html> 

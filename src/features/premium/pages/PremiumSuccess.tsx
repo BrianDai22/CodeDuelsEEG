@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { Button } from '@ui/button';
@@ -19,58 +19,107 @@ export default function PremiumSuccess() {
   const location = useLocation();
   const navigate = useNavigate();
   const functions = getFunctions();
+  const verificationInitiatedRef = useRef(false);
+  const sessionVerifiedRef = useRef(false);
 
   useEffect(() => {
+    // Early exit if already verified or initiated
+    if (sessionVerifiedRef.current) {
+      return;
+    }
+    
+    // Get the sessionId from URL - this won't change during component's lifecycle
     const params = new URLSearchParams(location.search);
     const sessionId = params.get('session_id');
     
-    if (sessionId && user) {
-      const verifyPayment = async () => {
-        setVerificationStatus('verifying');
-        try {
-          const verifyPremiumPaymentFunc = httpsCallable<{ sessionId: string }, { success: boolean; message: string }>(functions, 'verifyPremiumPayment');
-          if (!auth.currentUser) {
-             throw new Error("User not authenticated to verify payment.");
-          }
-          const result = await verifyPremiumPaymentFunc({ sessionId });
-          
-          if (result.data.success) {
-            setVerificationStatus('success');
-            toast.success(result.data.message || 'Thank you! Premium features activated.');
-            await refreshUser();
-          } else {
-            setVerificationStatus('error');
-            toast.error(result.data.message || 'Failed to verify payment. Please contact support.');
-          }
-        } catch (error: any) {
-          console.error('Error calling verifyPremiumPayment function:', error);
-          setVerificationStatus('error');
-          toast.error(error.message || 'An error occurred while verifying your payment.');
-        }
-      };
-      
-      verifyPayment();
-    } else if (!sessionId && user) {
-        if (user.isPremium) {
-            setVerificationStatus('success');
-        } else {
-            toast.info("Redirecting to premium page...");
-            navigate('/premium');
-        }
-    } else if (!user) {
-        setVerificationStatus('verifying');
+    // We need to wait for both sessionId and user to be available
+    if (!sessionId) {
+      setVerificationStatus('error');
+      toast.error("No payment session found", {
+        description: "Missing session information from payment provider."
+      });
+      sessionVerifiedRef.current = true; // Prevent further attempts
+      return;
     }
-  }, [location, navigate, user, functions, refreshUser]);
+    
+    // Wait for user to be available before proceeding
+    if (!user || !auth.currentUser) {
+      // Don't set error yet, we're still waiting for auth
+      return;
+    }
+    
+    // Define an async function for verification
+    const verifyPayment = async () => {
+      // Prevent duplicate verification
+      if (verificationInitiatedRef.current) {
+        return;
+      }
+      
+      // Mark as initiated to prevent future runs
+      verificationInitiatedRef.current = true;
+      
+      try {
+        const verifyPremiumPaymentFunc = httpsCallable<
+          { sessionId: string }, 
+          { success: boolean; message: string }
+        >(functions, 'verifyPremiumPayment');
+        
+        // Call the Firebase function
+        const result = await verifyPremiumPaymentFunc({ sessionId });
+        
+        // Mark as verified to prevent future verification attempts
+        sessionVerifiedRef.current = true;
+        
+        if (result.data.success) {
+          setVerificationStatus('success');
+          toast.success(result.data.message || 'Thank you! Premium features activated.', {
+            duration: 5000
+          });
+          // Refresh the user data to get updated premium status
+          await refreshUser();
+          // Ensure we show the user as premium even if refreshUser hasn't updated the state yet
+          localStorage.setItem('userProfile', JSON.stringify({
+            ...JSON.parse(localStorage.getItem('userProfile') || '{}'),
+            isPremium: true
+          }));
+        } else {
+          setVerificationStatus('error');
+          toast.error(result.data.message || 'Failed to verify payment. Please contact support.', {
+            duration: 5000
+          });
+        }
+      } catch (error: any) {
+        setVerificationStatus('error');
+        toast.error('An error occurred while verifying your payment.', {
+          description: 'Please try again or contact support.',
+          duration: 5000
+        });
+        // Mark as verified even on error to prevent constant retries
+        sessionVerifiedRef.current = true;
+      }
+    };
+    
+    // Add a slight delay to give auth time to initialize
+    const timer = setTimeout(() => {
+      if (user && !verificationInitiatedRef.current) {
+        verifyPayment();
+      }
+    }, 1000);
+    
+    return () => clearTimeout(timer);
+  }, [user, location.search, refreshUser]);
 
   const isLoading = verificationStatus === 'verifying';
-  const isSuccess = verificationStatus === 'success' || (user?.isPremium && verificationStatus !== 'error');
-  const isError = verificationStatus === 'error';
+  const isSuccess = verificationStatus === 'success' || (user?.isPremium === true);
+  const isError = verificationStatus === 'error' && !user?.isPremium;
 
   const renderHeader = () => {
-    if (isLoading || !user) {
-        return <GuestHeader />;
+    if (!user) {
+        return <LandingHeader />;
     } else if (user.isAdmin || user.isPremium) {
         return <PremiumHeader />;
+    } else if (user.id.startsWith('guest_')) {
+        return <GuestHeader />;
     } else {
         return <UserHeader />;
     }
@@ -113,10 +162,10 @@ export default function PremiumSuccess() {
                 <Button 
                   size="lg" 
                   className={isSuccess ? "bg-green-600 hover:bg-green-700" : "bg-primary"}
-                  onClick={() => navigate('/premium')}
+                  onClick={() => navigate(isSuccess ? '/premium-dashboard' : '/premium')}
                 >
                   {isSuccess ? <Crown className="mr-2 h-4 w-4" /> : null}
-                  {isSuccess ? 'Go to Premium Features' : 'Return to Premium Page'}
+                  {isSuccess ? 'Go to Premium Dashboard' : 'Return to Premium Page'}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>

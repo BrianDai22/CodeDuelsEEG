@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 // TODO: Replace this with the actual content/layout for the Index page
 const IndexPageContent = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-background to-background/95">
@@ -26,19 +26,39 @@ const IndexPageContent = () => {
             Compete in real-time coding challenges and sharpen your skills.
           </p>
             
-          {/* Waitlist Form */}
-          <div className="w-full max-w-md mx-auto mb-24">
-            <WaitlistForm />
-          </div>
+          {/* Show waitlist form only for non-authenticated users */}
+          {!isAuthenticated && (
+            <div className="w-full max-w-md mx-auto mb-24">
+              <WaitlistForm />
+            </div>
+          )}
           
-          {/* Action Buttons */}
+          {/* Action Buttons - different options for authenticated users */}
           <div className="flex flex-wrap gap-10 justify-center mb-16">
-            <Button size="lg" className="px-8 py-5 text-lg" onClick={() => navigate('/find-match')}>
-              Find Match
-            </Button>
-            <Button size="lg" variant="outline" className="px-8 py-5 text-lg" onClick={() => navigate('/leaderboard')}>
-              View Leaderboard
-            </Button>
+            {isAuthenticated ? (
+              <>
+                <Button size="lg" className="px-8 py-5 text-lg" onClick={() => navigate('/find-match')}>
+                  Find Match
+                </Button>
+                <Button size="lg" variant="outline" className="px-8 py-5 text-lg" onClick={() => navigate('/match-history')}>
+                  Your Matches
+                </Button>
+                {user?.isPremium && (
+                  <Button size="lg" variant="secondary" className="px-8 py-5 text-lg" onClick={() => navigate('/premium-dashboard')}>
+                    Premium Dashboard
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button size="lg" className="px-8 py-5 text-lg" onClick={() => navigate('/signup')}>
+                  Sign Up
+                </Button>
+                <Button size="lg" variant="outline" className="px-8 py-5 text-lg" onClick={() => navigate('/leaderboard')}>
+                  View Leaderboard
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </section>

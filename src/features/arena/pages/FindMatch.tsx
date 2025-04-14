@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { useAdmin } from '@shared/context/AdminContext';
 import { Button } from '@ui/button';
@@ -34,6 +34,7 @@ export default function FindMatch() {
   const [difficulty, setDifficulty] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (searching) {
@@ -70,7 +71,11 @@ export default function FindMatch() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {isPremium ? <PremiumHeader /> : <LandingHeader />}
+      {location.pathname.startsWith('/premium/') ? (
+        <PremiumHeader />
+      ) : (
+        isPremium ? <PremiumHeader /> : <LandingHeader />
+      )}
       
       <main className="flex-grow container mx-auto py-6 px-4">
         <div className="flex justify-between items-center mb-6">

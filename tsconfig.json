@@ -12,7 +12,9 @@
       "@shared/*": ["./src/shared/*"],
       "@ui/*": ["./src/ui/*"],
       "@pages/*": ["./src/pages/*"],
-      "@assets/*": ["./public/*"]
+      "@assets/*": ["./src/assets/*"],
+      "@core/*": ["./src/core/*"],
+      "@layouts/*": ["./src/layouts/*"]
     },
     "noImplicitAny": false,
     "noUnusedParameters": false,

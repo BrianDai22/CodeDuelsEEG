@@ -33,7 +33,7 @@ const premiumSections = [
     title: 'My Power-Ups',
     description: 'Manage your weekly power-ups and special abilities',
     icon: Zap,
-    link: '/battle',
+    link: '/premium/battle',
     color: 'text-yellow-500',
     bgColor: 'bg-yellow-50/30',
     borderColor: 'border-yellow-200'
@@ -42,7 +42,7 @@ const premiumSections = [
     title: 'Match History',
     description: 'View detailed statistics and analysis of your matches',
     icon: BarChart,
-    link: '/match-history',
+    link: '/premium/match-history',
     color: 'text-blue-500',
     bgColor: 'bg-blue-50/30',
     borderColor: 'border-blue-200'
@@ -51,7 +51,7 @@ const premiumSections = [
     title: 'Leaderboard',
     description: 'See your ranking and compare with other players',
     icon: Trophy,
-    link: '/leaderboard',
+    link: '/premium/leaderboard',
     color: 'text-purple-500',
     bgColor: 'bg-purple-50/30',
     borderColor: 'border-purple-200'
@@ -60,7 +60,7 @@ const premiumSections = [
     title: 'Find Match',
     description: 'Use priority matchmaking to find opponents faster',
     icon: Target,
-    link: '/find-match',
+    link: '/premium/find-match',
     color: 'text-green-500',
     bgColor: 'bg-green-50/30',
     borderColor: 'border-green-200'
@@ -128,19 +128,28 @@ export default function PremiumDashboard() {
   const isPremium = user?.isPremium || false;
   const isAdmin = user?.isAdmin || false;
 
-  // Redirect non-premium users once auth state is loaded
+  // Redirect users based on their status once auth state is loaded
   useEffect(() => {
-    if (!authLoading && !isPremium) {
+    if (authLoading) return;
+    
+    // Admin users should go to admin dashboard
+    if (isAdmin) {
+      navigate('/admin/dashboard', { replace: true });
+      return;
+    }
+    
+    // Non-premium users should go to premium features page
+    if (!isPremium) {
       toast.error("Access denied. Redirecting to premium page.");
       navigate('/premium', { replace: true });
     }
-  }, [authLoading, isPremium, navigate]);
+  }, [authLoading, isPremium, isAdmin, navigate]);
 
   // Loading state while auth is loading or if user is not premium yet (before redirect triggers)
-  if (authLoading || !isPremium) { 
+  if (authLoading || !isPremium || isAdmin) { 
     return (
       <div className="min-h-screen flex flex-col">
-        {user ? <UserHeader /> : <LandingHeader />}
+        <PremiumHeader />
         <main className="flex-1 container py-6 px-4 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />

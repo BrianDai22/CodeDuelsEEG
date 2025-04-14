@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Button } from '@ui/button';
 import { useToast } from '@shared/hooks/ui/use-toast';
 import { Progress } from '@ui/data/progress';
-import { Clock, Check, ShieldAlert, Timer, Shield, Crown } from 'lucide-react';
+import { Clock, Check, ShieldAlert, Timer, Shield, Crown, Home } from 'lucide-react';
 import CodeEditor from '@shared/components/CodeEditor';
 import { Card, CardContent } from '@ui/data/card';
 import { Badge } from '@ui/data/badge';
@@ -34,7 +34,8 @@ const Battle = () => {
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const { isAdmin } = useAdmin();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const location = useLocation();
   
   const difficulty = searchParams.get('difficulty') || 'easy';
   const problem = sampleProblems[difficulty];
@@ -43,26 +44,52 @@ const Battle = () => {
   const [timeLeft, setTimeLeft] = useState(300);
   const [playerHealth, setPlayerHealth] = useState(100);
   const [opponentHealth, setOpponentHealth] = useState(100);
-  const [playerCode, setPlayerCode] = useState(problem.starter);
+  const [playerCode, setPlayerCode] = useState(() => problem?.starter || "// Loading code editor...");
   const [opponentProgress, setOpponentProgress] = useState(0);
   const [playerPassedTests, setPlayerPassedTests] = useState(0);
-  const [isPremium, setIsPremium] = useState(() => {
-    // Initialize from localStorage
+  const [isPremiumUser, setIsPremiumUser] = useState(false);
+
+  // Effect to set premium status whenever user changes
+  useEffect(() => {
+    // Check premium status from the user object first
+    if (user?.isPremium || isAdmin) {
+      setIsPremiumUser(true);
+      return;
+    }
+    
+    // Fallback to localStorage
     const userProfile = localStorage.getItem('userProfile');
     if (userProfile) {
-      const profile = JSON.parse(userProfile);
-      return profile.isPremium || isAdmin;
+      try {
+        const profile = JSON.parse(userProfile);
+        setIsPremiumUser(profile.isPremium || false);
+      } catch (e) {
+        console.error("Error parsing user profile:", e);
+        setIsPremiumUser(false);
+      }
+    } else {
+      setIsPremiumUser(false);
     }
-    return false;
-  });
+  }, [user, isAdmin]);
 
+  // Effect to start the match with a delay
   useEffect(() => {
+    // Make sure we have the problem before starting
+    if (!problem) {
+      navigate('/find-match');
+      return;
+    }
+
     const timer = setTimeout(() => {
       setMatchStarted(true);
+      // Initialize the player code with the problem starter
+      setPlayerCode(problem.starter);
     }, 2000);
+    
     return () => clearTimeout(timer);
-  }, []);
+  }, [problem, navigate]);
 
+  // Effect to manage the countdown timer
   useEffect(() => {
     if (!matchStarted) return;
     
@@ -78,6 +105,25 @@ const Battle = () => {
     
     return () => clearInterval(timer);
   }, [matchStarted]);
+
+  // Effect to simulate opponent progress
+  useEffect(() => {
+    if (!matchStarted) return;
+    
+    const interval = setInterval(() => {
+      setOpponentProgress(prev => {
+        const newProgress = prev + (Math.random() * 0.5);
+        if (newProgress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => navigate('/results?result=lose'), 1000);
+          return 100;
+        }
+        return newProgress;
+      });
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [matchStarted, navigate]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -112,7 +158,11 @@ const Battle = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {isPremium ? <PremiumHeader /> : <LandingHeader />}
+      {location.pathname.startsWith('/premium/') ? (
+        <PremiumHeader />
+      ) : (
+        isPremiumUser ? <PremiumHeader /> : <LandingHeader />
+      )}
       
       <main className="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
         <div className="flex flex-col">

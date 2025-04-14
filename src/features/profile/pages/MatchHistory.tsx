@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@features/auth/AuthContext';
 import { useAdmin } from '@shared/context/AdminContext';
-import { useNavigate } from 'react-router-dom';
+import { usePremium } from '@shared/context/PremiumContext';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/data/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@ui/data/table';
@@ -69,16 +70,16 @@ const sampleAnalytics = {
 
 export default function MatchHistory() {
   const { user, isAuthenticated } = useAuth();
-  const { isPremium, isAdmin } = useAdmin();
+  const { isAdmin } = useAdmin();
+  const { isPremium } = usePremium();
   const navigate = useNavigate();
+  const location = useLocation();
   const [matches, setMatches] = useState(sampleMatches);
   const [analytics, setAnalytics] = useState(sampleAnalytics);
 
   useEffect(() => {
     // Fetch actual match history and premium status
     // This is where you'd make API calls to get real data
-    console.log('User premium status:', isPremium);
-    console.log('User admin status:', isAdmin);
   }, [isPremium, isAdmin]);
 
   const handleViewAnalytics = () => {
@@ -113,7 +114,11 @@ export default function MatchHistory() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {isPremium ? <PremiumHeader /> : <LandingHeader />}
+      {location.pathname.startsWith('/premium/') ? (
+        <PremiumHeader />
+      ) : (
+        isPremium ? <PremiumHeader /> : <LandingHeader />
+      )}
       
       <main className="flex-grow container py-6 px-4">
         <div className="flex justify-between items-center mb-6">
@@ -140,7 +145,7 @@ export default function MatchHistory() {
             )}
             <Button 
               variant="outline" 
-              onClick={() => navigate('/find-match')}
+              onClick={() => navigate(isPremium ? '/premium/find-match' : '/find-match')}
               className="flex items-center space-x-2"
             >
               <Trophy className="h-4 w-4" />

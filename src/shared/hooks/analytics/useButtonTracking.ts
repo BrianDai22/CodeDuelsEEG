@@ -24,18 +24,18 @@ export const useButtonTracking = () => {
       additionalData
     };
 
-    // Log to console for development
-    console.log('Button Click Event:', event);
-
     // Send to Amplitude
     try {
       amplitude.track('Button Click', event);
     } catch (error) {
-      console.error('Failed to send event to Amplitude:', error);
-      // Store failed event in localStorage
-      const failedEvents = JSON.parse(localStorage.getItem('failedEvents') || '[]');
-      failedEvents.push(event);
-      localStorage.setItem('failedEvents', JSON.stringify(failedEvents));
+      // Silently store failed event in localStorage without logging
+      try {
+        const failedEvents = JSON.parse(localStorage.getItem('failedEvents') || '[]');
+        failedEvents.push(event);
+        localStorage.setItem('failedEvents', JSON.stringify(failedEvents));
+      } catch {
+        // Silent failure
+      }
     }
   }, []);
 

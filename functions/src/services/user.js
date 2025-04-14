@@ -1,28 +1,14 @@
 /**
  * User Service
- * Handles user-related operations like checking roles and managing premium status
+ * Handles user-related operations like managing premium status and payments
  */
 
-const { db, authorizedAdminEmails, authorizedPremiumEmails } = require('../config/firebase');
+// Import admin SDK to access the globally initialized instance
+const admin = require('firebase-admin');
 const logger = require('firebase-functions/logger');
 
-/**
- * Checks if a user has admin privileges
- * @param {string} email - The user's email
- * @returns {boolean} True if the user is an admin
- */
-function isAdmin(email) {
-  return authorizedAdminEmails.includes(email);
-}
-
-/**
- * Checks if a user has premium status
- * @param {string} email - The user's email
- * @returns {boolean} True if the user has premium status
- */
-function isPremium(email) {
-  return authorizedPremiumEmails.includes(email) || isAdmin(email);
-}
+// Access the globally initialized db instance from index.js
+const db = admin.database();
 
 /**
  * Updates a user's premium status
@@ -91,8 +77,6 @@ async function getPaymentHistory(userId) {
 }
 
 module.exports = {
-  isAdmin,
-  isPremium,
   updatePremiumStatus,
   recordPayment,
   getPaymentHistory,

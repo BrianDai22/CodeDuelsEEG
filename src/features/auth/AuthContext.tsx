@@ -28,6 +28,7 @@ export interface User {
   displayName: string | null;
   isAdmin?: boolean;
   isPremium?: boolean;
+  isGuest?: boolean;
 }
 
 export interface AuthContextType {
@@ -83,6 +84,33 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  // Enhanced refreshUser function that forces token refresh from Firebase
+  const refreshUser = async () => {
+    console.log("[AuthProvider] Forcing user refresh");
+    
+    if (!auth.currentUser) {
+      console.log("[AuthProvider] No current user to refresh");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Force refresh the token to get the latest claims
+      console.log("[AuthProvider] Forcing token refresh");
+      await auth.currentUser.getIdToken(true);
+      
+      // Convert the refreshed user to our user model
+      const userData = await convertFirebaseUser(auth.currentUser);
+      console.log("[AuthProvider] User data refreshed:", userData);
+      setUser(userData);
+      setIsAuthenticated(true);
+    } catch (error) {
+      console.error("[AuthProvider] Error refreshing user:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Convert Firebase user to our User type, fetching role from backend
   const convertFirebaseUser = async (firebaseUser: FirebaseUser): Promise<User> => {
     console.log(`[AuthProvider] convertFirebaseUser called for ${firebaseUser.uid}`);
@@ -95,38 +123,109 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       console.log(`[AuthProvider] RTDB data for ${firebaseUser.uid}:`, dbData);
     } catch (rtdbError) {
       console.error(`[AuthProvider] Error fetching RTDB data for ${firebaseUser.uid}:`, rtdbError);
-      // Decide how to handle RTDB fetch error - maybe proceed with default/auth data?
-      // Throwing here will stop the process and likely keep loading=true
-      // throw rtdbError; 
     }
 
-    // Fetch role securely from Cloud Function
+    // Fetch role securely from Cloud Function - this is the ONLY source of truth for roles
     let role = { isAdmin: false, isPremium: false };
     try {
       console.log(`[AuthProvider] Fetching role for ${firebaseUser.email}`);
       role = await fetchUserRole(firebaseUser.email);
       console.log(`[AuthProvider] Role for ${firebaseUser.email}:`, role);
+      
+      // If user has roles in the database, ensure they match what the server says
+      // This updates the database to match server-determined roles if needed
+      if ((dbData as any).isAdmin !== role.isAdmin || (dbData as any).isPremium !== role.isPremium) {
+        console.log(`[AuthProvider] Updating user database roles to match server-determined roles`);
+        await set(userRef, {
+          ...(dbData as any),
+          isAdmin: role.isAdmin,
+          isPremium: role.isPremium
+        });
+      }
     } catch (roleError) {
       console.error(`[AuthProvider] Error fetching role for ${firebaseUser.email}:`, roleError);
-      // Decide how to handle role fetch error - default roles are already set
-      // Maybe log and continue with default roles?
     }
 
     const userData: User = {
       id: firebaseUser.uid,
       uid: firebaseUser.uid,
       email: firebaseUser.email,
-      // Prioritize DB username > Firebase Auth display name
-      username: (dbData as any).username || firebaseUser.displayName || 'Guest', // Added fallback
+      username: (dbData as any).username || firebaseUser.displayName || 'Guest',
       createdAt: (dbData as any).createdAt || new Date().toISOString(),
       photoURL: firebaseUser.photoURL || (dbData as any).photoURL || '',
-      displayName: firebaseUser.displayName || (dbData as any).username || 'Guest', // Added fallback
-      isAdmin: role.isAdmin,
-      isPremium: role.isPremium,
+      displayName: firebaseUser.displayName || (dbData as any).username || 'Guest',
+      isAdmin: role.isAdmin, // Always use server-determined roles
+      isPremium: role.isPremium, // Always use server-determined roles
+      isGuest: false,
     };
+    
     console.log(`[AuthProvider] Final constructed user data for ${firebaseUser.uid}:`, userData);
     return userData;
   };
+
+  // Set up automatic token and role refresh
+  useEffect(() => {
+    if (user && !user.isGuest) {
+      console.log("[AuthProvider] Setting up automatic token refresh");
+      
+      // Schedule token refresh every 5 minutes to catch permission changes
+      // Reduced from 10 minutes to 5 minutes for better security
+      const refreshInterval = setInterval(() => {
+        console.log("[AuthProvider] Automatic token refresh triggered");
+        refreshUser();
+      }, 5 * 60 * 1000); // 5 minutes
+      
+      // Immediate refresh on focus to catch permission changes when user returns to app
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          console.log("[AuthProvider] Document became visible, refreshing token");
+          refreshUser();
+        }
+      };
+      
+      // Set up event listeners for visibility change and network reconnection
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', () => {
+        console.log("[AuthProvider] Network reconnected, refreshing token");
+        refreshUser();
+      });
+
+      // Random jitter refresh - refreshes randomly once every 2-4 minutes
+      // This helps prevent time-of-check-to-time-of-use attacks by making
+      // token refreshes unpredictable
+      const randomRefresh = () => {
+        const jitter = Math.floor(Math.random() * 2 * 60 * 1000) + 2 * 60 * 1000; // 2-4 minutes
+        setTimeout(() => {
+          console.log("[AuthProvider] Random jitter refresh triggered");
+          refreshUser();
+          randomRefresh(); // Schedule the next random refresh
+        }, jitter);
+      };
+      
+      // Start random refresh cycle
+      randomRefresh();
+      
+      // Clean up interval and event listeners when component unmounts or user changes
+      return () => {
+        console.log("[AuthProvider] Cleaning up token refresh interval and listeners");
+        clearInterval(refreshInterval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('online', refreshUser);
+      };
+    }
+  }, [user?.id]);
+  
+  // URL-based refresh triggers - refresh user data when accessing admin or premium pages
+  useEffect(() => {
+    if (user && !user.isGuest) {
+      const path = window.location.pathname;
+      // Force refresh when accessing permission-dependent pages
+      if (path.startsWith('/admin') || path.startsWith('/premium')) {
+        console.log(`[AuthProvider] Permission-critical page detected (${path}). Refreshing token.`);
+        refreshUser();
+      }
+    }
+  }, [window.location.pathname, user?.id]);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -141,6 +240,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           console.log("[AuthProvider] User data converted:", userData);
           setUser(userData);
           setIsAuthenticated(true);
+          
+          // Check if there's a saved route to restore after refresh
+          const savedRoute = sessionStorage.getItem('lastAuthenticatedRoute');
+          if (savedRoute && window.location.pathname !== savedRoute) {
+            console.log("[AuthProvider] Restoring saved route:", savedRoute);
+            navigate(savedRoute, { replace: true });
+          }
         } catch (error) {
           console.error("[AuthProvider] Error processing authenticated user:", error);
           setUser(null);
@@ -164,30 +270,100 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       console.log("[AuthProvider] useEffect cleanup");
       unsubscribe();
     }
-  }, []);
+  }, [navigate]);
+
+  // Check for guest user data in sessionStorage (once at component mount)
+  useEffect(() => {
+    console.log("[AuthProvider] Checking for guest user in sessionStorage");
+    // Only check sessionStorage if no user is already set
+    if (!user) {
+      setLoading(true);
+      const guestUserData = sessionStorage.getItem('guestUser');
+      if (guestUserData) {
+        try {
+          console.log("[AuthProvider] Found guest user data in sessionStorage");
+          const guestUser = JSON.parse(guestUserData);
+          
+          // Check for session expiration
+          if (guestUser.sessionExpiry && guestUser.sessionExpiry < Date.now()) {
+            console.log("[AuthProvider] Guest session expired");
+            sessionStorage.removeItem('guestUser');
+            setLoading(false);
+            return;
+          }
+          
+          // Verify this is actually a guest user with the expected format
+          if (guestUser && guestUser.id && guestUser.id.startsWith('guest_')) {
+            console.log("[AuthProvider] Setting guest user from sessionStorage:", guestUser);
+            setUser(guestUser);
+            setIsAuthenticated(true);
+            
+            // Check if there's a saved route to restore after refresh
+            const savedRoute = sessionStorage.getItem('lastAuthenticatedRoute');
+            if (savedRoute && window.location.pathname !== savedRoute) {
+              console.log("[AuthProvider] Restoring saved route for guest user:", savedRoute);
+              navigate(savedRoute, { replace: true });
+            }
+          } else {
+            console.log("[AuthProvider] Invalid guest user data in sessionStorage");
+            sessionStorage.removeItem('guestUser');
+          }
+        } catch (error) {
+          console.error("[AuthProvider] Error parsing guest user data:", error);
+          sessionStorage.removeItem('guestUser');
+        }
+      } else {
+        console.log("[AuthProvider] No guest user found in sessionStorage");
+      }
+      setLoading(false);
+    }
+  }, [navigate]);
 
   // Login function
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       setLoading(true);
-      await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting the user state
-      return { success: true };
+      
+      // Clear any guest user data if it exists
+      localStorage.removeItem('guestUser');
+      
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Retrieve user profile
+      const userProfile = await convertFirebaseUser(user);
+      
+      if (userProfile) {
+        setUser(userProfile);
+        setIsAuthenticated(true);
+        
+        // Get the redirect path from sessionStorage or default to home
+        const redirectPath = sessionStorage.getItem('redirectAfterLogin') || '/';
+        sessionStorage.removeItem('redirectAfterLogin'); // Clear after use
+        
+        // Use timeout to ensure navigation happens after state updates
+        setTimeout(() => {
+          navigate(redirectPath);
+        }, 100);
+        
+        return { success: true };
+      } else {
+        throw new Error('User profile not found');
+      }
     } catch (error: any) {
       console.error('Login error:', error);
-      let errorMessage = 'An error occurred during login';
+      let errorMessage = 'Failed to log in';
       
-      if (error.code === 'auth/invalid-credential') {
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
         errorMessage = 'Invalid email or password';
-      } else if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password';
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = 'Too many failed login attempts. Please try again later';
       }
       
-      return { success: false, error: errorMessage };
+      return { 
+        success: false, 
+        error: errorMessage 
+      };
     } finally {
       setLoading(false);
     }
@@ -238,59 +414,115 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       setLoading(true);
       
-      // Generate a random guest ID and username
-      const guestId = `guest_${Math.random().toString(36).substring(2, 15)}`;
-      const guestUsername = `Guest_${Math.floor(Math.random() * 10000)}`;
+      // Generate random ID and username
+      const guestId = `guest_${Math.random().toString(36).substring(2, 10)}`;
+      const guestUsername = `Guest_${Math.random().toString(36).substring(2, 5)}`;
       
-      // Create a temporary guest user
+      // Create guest user object with required properties
       const guestUser: User = {
         id: guestId,
         uid: guestId,
-        email: null,
+        email: `${guestId}@guest.com`,
         username: guestUsername,
+        displayName: guestUsername,
         createdAt: new Date().toISOString(),
-        displayName: null,
         photoURL: null,
         isAdmin: false,
-        isPremium: false
+        isPremium: false,
+        isGuest: true // Flag to identify guest users
       };
+
+      // Store guest data in sessionStorage instead of localStorage
+      sessionStorage.setItem('guestUser', JSON.stringify({
+        ...guestUser,
+        sessionExpiry: Date.now() + (3600 * 1000) // Session expires in 1 hour
+      }));
       
-      // Store guest data in localStorage
-      localStorage.setItem('guestUser', JSON.stringify(guestUser));
+      // Clear any existing admin mode
+      sessionStorage.removeItem('adminMode');
       
-      // Clear any existing premium status and user profile
-      localStorage.removeItem('userProfile');
-      
-      // Update the local user state
+      // Update local state
       setUser(guestUser);
-      setIsAuthenticated(true); // Set isAuthenticated to true for guest users
+      setIsAuthenticated(true);
+      
+      // Get the redirect path from sessionStorage or default to home
+      const redirectPath = sessionStorage.getItem('redirectAfterLogin') || '/';
+      sessionStorage.removeItem('redirectAfterLogin'); // Clear after use
+      
+      // Use timeout to ensure navigation happens after state updates
+      setTimeout(() => {
+        navigate(redirectPath);
+      }, 100);
       
       return { success: true };
-    } catch (error: any) {
+    } catch (error) {
       console.error('Guest login error:', error);
-      return { success: false, error: 'Failed to sign in as guest' };
+      return { 
+        success: false, 
+        error: 'Failed to create guest session' 
+      };
     } finally {
       setLoading(false);
     }
   };
 
-  // Logout function
+  // Enhanced logout with complete session cleaning
   const logout = async (): Promise<void> => {
     try {
-      setLoading(true);
-      if (user?.id.startsWith('guest_')) {
-        // Clear guest data from localStorage
-        localStorage.removeItem('guestUser');
-      } else {
-        await signOut(auth);
+      console.log("[AuthProvider] Logout initiated");
+      
+      // Clear all storage first - while we still have auth
+      if (user) {
+        // Perform a server logout record action
+        try {
+          const functions = getFunctions();
+          const logLogout = httpsCallable(functions, 'logUserActivity');
+          await logLogout({ activity: 'logout', timestamp: new Date().toISOString() });
+        } catch (serverLogError) {
+          console.error("[AuthProvider] Error logging logout to server:", serverLogError);
+        }
       }
+      
+      // Get current URL path for later redirect check
+      const currentPath = window.location.pathname;
+      
+      // Determine if current page is protected
+      const isProtectedPage = ['/admin', '/premium', '/settings', '/match-history'].some(
+        path => currentPath.startsWith(path)
+      );
+      
+      // Firebase sign out
+      await signOut(auth);
+
+      // Clear all session data
+      sessionStorage.clear();
+      localStorage.removeItem('userProfile');
+      sessionStorage.removeItem('lastAuthenticatedRoute');
+      sessionStorage.removeItem('guestUser');
+      sessionStorage.removeItem('adminMode');
+      sessionStorage.removeItem('redirectAfterLogin');
+      
+      // Clean up cookies that might contain session data
+      document.cookie.split(';').forEach(cookie => {
+        const name = cookie.split('=')[0].trim();
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      });
+      
+      // Update state
       setUser(null);
       setIsAuthenticated(false);
-      navigate('/');
+      
+      // Navigate back to home if on a protected page
+      if (isProtectedPage) {
+        navigate('/', { replace: true });
+      }
+      
+      console.log("[AuthProvider] Logout completed successfully");
     } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      setLoading(false);
+      console.error("[AuthProvider] Error during logout:", error);
+      // Even if there's an error, clear user state to prevent UI showing logged in state
+      setUser(null);
+      setIsAuthenticated(false);
     }
   };
 
@@ -350,26 +582,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       return { success: false, error: 'Failed to update profile.' };
     } finally {
       setLoading(false);
-    }
-  };
-
-  const refreshUser = async () => {
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      setLoading(true);
-      try {
-        const userData = await convertFirebaseUser(currentUser);
-        setUser(userData);
-      } catch (error) {
-        console.error("Error refreshing user data:", error);
-        // Optionally logout or handle error
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // No user logged in, ensure state is clear
-      setUser(null);
-      setIsAuthenticated(false);
     }
   };
 

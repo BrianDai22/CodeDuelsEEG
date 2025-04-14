@@ -16,7 +16,7 @@ export const usePageTracking = () => {
         referrer: document.referrer
       });
     } catch (error) {
-      console.error('Failed to send page view to Amplitude:', error);
+      // Silent error handling without logging
     }
   }, [location.pathname]);
 }; 

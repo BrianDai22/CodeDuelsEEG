@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { Button } from '@ui/button';
 import { Input } from '@ui/form/input';
@@ -16,10 +16,16 @@ import { toast } from 'sonner';
 import ImageEditor from '@shared/components/ImageEditor';
 import PremiumPaymentHistory from '@features/premium/components/PremiumPaymentHistory';
 import { Badge } from '@ui/data/badge';
+import LandingHeader from '@shared/components/LandingHeader';
+import { useAdmin } from '@shared/context/AdminContext';
+import { usePremium } from '@shared/context/PremiumContext';
 
 export default function Settings() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading, updateUserProfile: contextUpdateProfile } = useAuth();
+  const { isAdmin } = useAdmin();
+  const { isPremium } = usePremium();
   
   const [formData, setFormData] = useState({
     displayName: '',
@@ -38,9 +44,6 @@ export default function Settings() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showImageEditor, setShowImageEditor] = useState(false);
   const [originalImage, setOriginalImage] = useState<string | null>(null);
-
-  const isPremium = user?.isPremium || false;
-  const isAdmin = user?.isAdmin || false;
 
   useEffect(() => {
     if (user) {
@@ -90,7 +93,6 @@ export default function Settings() {
       };
       reader.readAsDataURL(file);
     } catch (err) {
-      console.error('Error handling photo:', err);
       toast.error('Failed to update photo. Please try again.');
       setIsUploading(false);
     }
@@ -126,7 +128,6 @@ export default function Settings() {
         setSuccess('No profile changes to save.');
       }
     } catch (err: any) {
-      console.error("Profile submit error:", err);
       setError(err.message || 'Failed to update profile');
     } finally {
       setIsSubmittingProfile(false);
@@ -162,7 +163,6 @@ export default function Settings() {
       setConfirmPassword('');
 
     } catch (err: any) {
-      console.error("Password submit error:", err);
       setError(err.message || 'Failed to update password');
     } finally {
       setIsSubmittingPassword(false);
@@ -196,9 +196,13 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {renderHeader()}
+      {location.pathname.startsWith('/premium/') ? (
+        <PremiumHeader />
+      ) : (
+        isPremium ? <PremiumHeader /> : <LandingHeader />
+      )}
       
-      <main className="flex-grow container py-8 px-4">
+      <main className="flex-grow container mx-auto py-6 px-4">
         <div className="max-w-2xl mx-auto space-y-8">
 
          {error && (
@@ -333,8 +337,8 @@ export default function Settings() {
             </CardContent>
           </Card>
           
-          {(isPremium || isAdmin) && (
-            <Card>
+          {isPremium && (
+            <Card className="border-yellow-200 bg-yellow-50/10">
               <CardHeader>
                 <CardTitle className="text-xl flex items-center">
                   <Crown className="mr-2 h-5 w-5 text-yellow-500" /> Premium Status
@@ -344,14 +348,85 @@ export default function Settings() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                 <Badge variant="default" className="mb-4 bg-green-500/80 hover:bg-green-600/80 text-white px-3 py-1.5 text-sm">
-                   {isAdmin ? (
-                     <><Shield className="h-5 w-5 mr-1.5" /> Admin Access</>
-                   ) : (
-                     <><Crown className="h-4 w-4 mr-1" /> Premium Active</>
-                   )}
-                 </Badge>
-                 <PremiumPaymentHistory />
+                <div className="flex items-center gap-2 mb-4">
+                  <Badge variant="default" className="bg-yellow-500/80 hover:bg-yellow-600/80 text-white px-3 py-1.5 text-sm">
+                    <Crown className="h-4 w-4 mr-1" /> Premium Active
+                  </Badge>
+                  
+                  {isAdmin && (
+                    <div className="text-sm text-muted-foreground italic">
+                      (Separate from admin privileges)
+                    </div>
+                  )}
+                </div>
+                <PremiumPaymentHistory />
+              </CardContent>
+            </Card>
+          )}
+          
+          {Boolean(isAdmin) && (
+            <Card className="border-purple-200 bg-purple-50/10">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center">
+                  <Shield className="mr-2 h-5 w-5 text-purple-500" /> Administrator Dashboard
+                </CardTitle>
+                <CardDescription>
+                  Special administrative controls and settings.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 rounded-md bg-purple-100/50 border border-purple-200">
+                    <div className="flex items-center">
+                      <Shield className="h-5 w-5 text-purple-600 mr-2" />
+                      <div>
+                        <p className="font-medium">Administrator Account</p>
+                        <p className="text-sm text-muted-foreground">
+                          You have full administrative privileges
+                          {isPremium ? " (separate from premium status)" : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge className="bg-purple-600">Active</Badge>
+                  </div>
+
+                  <Button 
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                    onClick={() => {
+                      // Force admin status refresh
+                      const userProfile = localStorage.getItem('userProfile');
+                      if (userProfile) {
+                        const profile = JSON.parse(userProfile);
+                        profile.isAdmin = true;
+                        localStorage.setItem('userProfile', JSON.stringify(profile));
+                        toast.success("Admin status confirmed. Page will refresh.");
+                        setTimeout(() => window.location.reload(), 1000);
+                      }
+                    }}
+                  >
+                    Refresh Admin Status
+                  </Button>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button 
+                      variant="outline" 
+                      className="border-purple-200 hover:bg-purple-100/50 hover:text-purple-700"
+                      onClick={() => navigate('/admin')}
+                    >
+                      <Shield className="mr-2 h-4 w-4" />
+                      Admin Panel
+                    </Button>
+                    
+                    <Button 
+                      variant="outline" 
+                      className="border-purple-200 hover:bg-purple-100/50 hover:text-purple-700"
+                      onClick={() => navigate('/admin/users')}
+                    >
+                      <User className="mr-2 h-4 w-4" />
+                      User Management
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

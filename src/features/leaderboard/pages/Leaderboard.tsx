@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@ui/button';
 import { 
   Table, 
@@ -88,6 +89,8 @@ const Leaderboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [leaderboardData, setLeaderboardData] = useState(initialLeaderboardData);
   const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
   
   const filteredData = leaderboardData.filter(player => 
     player.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -108,7 +111,11 @@ const Leaderboard = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {isPremium ? <PremiumHeader /> : <LandingHeader />}
+      {location.pathname.startsWith('/premium/') ? (
+        <PremiumHeader />
+      ) : (
+        isPremium ? <PremiumHeader /> : <LandingHeader />
+      )}
       
       <main className="flex-grow container py-6 px-4">
         <div className="flex justify-between items-center mb-6">
@@ -144,6 +151,15 @@ const Leaderboard = () => {
                 )}
               </Badge>
             )}
+
+            <Button 
+              variant="outline" 
+              onClick={() => navigate(isPremium ? '/premium/find-match' : '/find-match')}
+              className="flex items-center space-x-2"
+            >
+              <Search className="h-4 w-4" />
+              <span>Find Match</span>
+            </Button>
           </div>
         </div>
         

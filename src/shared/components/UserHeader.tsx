@@ -1,14 +1,15 @@
 import { Button } from '@ui/button';
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@ui/data/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@ui/feedback/dropdown-menu';
-import { Code, User, Settings, LogOut, Search, ChevronDown, History, HomeIcon, Crown } from 'lucide-react';
+import { Code, User, Settings, LogOut, Search, ChevronDown, History, Home, Crown, Trophy, Menu, X } from 'lucide-react';
 
 const UserHeader = () => {
   const navigate = useNavigate();
   const { user, logout, isAuthenticated } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <header className="border-b border-border py-4 px-6">
@@ -26,12 +27,19 @@ const UserHeader = () => {
           </Button>
         </div>
         
+        {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6">
           <Button variant="link" className="text-lg" onClick={() => navigate('/')}>
-            Home
+            <div className="flex items-center space-x-2">
+              <Home className="h-5 w-5" />
+              <span>Home</span>
+            </div>
           </Button>
           <Button variant="link" className="text-lg" onClick={() => navigate('/leaderboard')}>
-            Leaderboard
+            <div className="flex items-center space-x-2">
+              <Trophy className="h-5 w-5" />
+              <span>Leaderboard</span>
+            </div>
           </Button>
           <Button variant="link" className="text-lg" onClick={() => navigate('/find-match')}>
             <div className="flex items-center space-x-2">
@@ -46,6 +54,16 @@ const UserHeader = () => {
             </div>
           </Button>
         </nav>
+        
+        {/* Mobile Menu Button */}
+        <Button 
+          variant="ghost" 
+          size="icon"
+          className="md:hidden" 
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </Button>
         
         <div className="flex items-center">
           {isAuthenticated ? (
@@ -112,6 +130,54 @@ const UserHeader = () => {
           )}
         </div>
       </div>
+      
+      {/* Mobile Navigation Menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden mt-4 pb-4">
+          <nav className="flex flex-col space-y-4">
+            <Button variant="ghost" className="justify-start" onClick={() => { navigate('/'); setMobileMenuOpen(false); }}>
+              <div className="flex items-center space-x-2">
+                <Home className="h-5 w-5" />
+                <span>Home</span>
+              </div>
+            </Button>
+            <Button variant="ghost" className="justify-start" onClick={() => { navigate('/leaderboard'); setMobileMenuOpen(false); }}>
+              <div className="flex items-center space-x-2">
+                <Trophy className="h-5 w-5" />
+                <span>Leaderboard</span>
+              </div>
+            </Button>
+            <Button variant="ghost" className="justify-start" onClick={() => { navigate('/find-match'); setMobileMenuOpen(false); }}>
+              <div className="flex items-center space-x-2">
+                <Search className="h-5 w-5" />
+                <span>Find Match</span>
+              </div>
+            </Button>
+            <Button variant="ghost" className="justify-start" onClick={() => { navigate('/premium'); setMobileMenuOpen(false); }}>
+              <div className="flex items-center space-x-2">
+                <Crown className="h-5 w-5" />
+                <span>Premium</span>
+              </div>
+            </Button>
+            {isAuthenticated && (
+              <>
+                <Button variant="ghost" className="justify-start" onClick={() => { navigate('/match-history'); setMobileMenuOpen(false); }}>
+                  <div className="flex items-center space-x-2">
+                    <History className="h-5 w-5" />
+                    <span>Match History</span>
+                  </div>
+                </Button>
+                <Button variant="ghost" className="justify-start" onClick={() => { navigate('/settings'); setMobileMenuOpen(false); }}>
+                  <div className="flex items-center space-x-2">
+                    <Settings className="h-5 w-5" />
+                    <span>Settings</span>
+                  </div>
+                </Button>
+              </>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 };

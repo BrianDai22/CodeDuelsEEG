@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@ui/data/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@ui/feedback/dropdown-menu';
-import { Code, User, Settings, LogOut, Search, ChevronDown, History, HomeIcon, Crown, Shield } from 'lucide-react';
+import { Code, User, Settings, LogOut, Search, ChevronDown, History, Home, Crown, Shield } from 'lucide-react';
 
 const LandingHeader = () => {
   const navigate = useNavigate();
@@ -29,7 +29,7 @@ const LandingHeader = () => {
         <nav className="flex items-center space-x-6">
           <Button variant="link" className="text-lg" onClick={() => navigate('/')}>
             <div className="flex items-center space-x-2">
-              <HomeIcon className="h-5 w-5" />
+              <Home className="h-5 w-5" />
               <span>Home</span>
             </div>
           </Button>

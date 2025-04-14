@@ -16,7 +16,9 @@ export default defineConfig(({ mode }) => ({
       "@shared": path.resolve(__dirname, "./src/shared"),
       "@ui": path.resolve(__dirname, "./src/ui"),
       "@pages": path.resolve(__dirname, "./src/pages"),
-      "@assets": path.resolve(__dirname, "./public"),
+      "@assets": path.resolve(__dirname, "./src/assets"),
+      "@core": path.resolve(__dirname, "./src/core"),
+      "@layouts": path.resolve(__dirname, "./src/layouts"),
     },
   },
 }));

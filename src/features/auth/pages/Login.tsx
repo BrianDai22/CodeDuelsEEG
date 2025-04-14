@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { Button } from '@ui/button';
@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@ui/feedback/alert';
 import { AlertCircle, User } from 'lucide-react';
 import LandingHeader from '@shared/components/LandingHeader';
 import LandingFooter from '@shared/components/LandingFooter';
+import { useToast } from '@ui/feedback/use-toast';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -18,46 +19,51 @@ export default function Login() {
   const { login, loginAsGuest } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
 
-  // Get the page the user was trying to access, or default to home
-  const from = (location.state as any)?.from?.pathname || '/';
+  // Save redirect location to sessionStorage (if it exists and is not home)
+  useEffect(() => {
+    // Check if we have a redirect path in location state
+    const redirectPath = location.state?.from?.pathname;
+    if (redirectPath && redirectPath !== '/') {
+      sessionStorage.setItem('redirectAfterLogin', redirectPath);
+    }
+  }, [location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setIsLoading(true);
+    
+    if (!email || !password) {
+      toast({
+        title: 'Error',
+        description: 'Please enter your email and password',
+        variant: 'destructive',
+      });
+      return;
+    }
 
-    try {
-      const result = await login(email, password);
-      if (result.success) {
-        navigate(from);
-      } else {
-        setError(result.error || 'Failed to log in');
-      }
-    } catch (err) {
-      setError('An unexpected error occurred');
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    const result = await login(email, password);
+    
+    if (!result.success) {
+      toast({
+        title: 'Login Failed',
+        description: result.error,
+        variant: 'destructive',
+      });
+      // Navigation is now handled inside the login function after state updates
     }
   };
 
   const handleGuestLogin = async () => {
-    setError(null);
-    setIsGuestLoading(true);
-
-    try {
-      const result = await loginAsGuest();
-      if (result.success) {
-        navigate(from);
-      } else {
-        setError(result.error || 'Failed to sign in as guest');
-      }
-    } catch (err) {
-      setError('An unexpected error occurred');
-      console.error(err);
-    } finally {
-      setIsGuestLoading(false);
+    const result = await loginAsGuest();
+    
+    if (!result.success) {
+      toast({
+        title: 'Guest Login Failed',
+        description: result.error,
+        variant: 'destructive',
+      });
+      // Navigation is now handled inside the loginAsGuest function after state updates
     }
   };
 
