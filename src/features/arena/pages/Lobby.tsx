@@ -110,6 +110,9 @@ export default function Lobby() {
           setLobbyDetails(data as LobbyData);
           // Determine if the current user is the host
           setIsHost(user?.uid === data.host_id);
+          
+          console.log(`👑 INITIAL HOST STATUS - Current user: ${user?.uid}, Host ID: ${data.host_id}, isHost: ${user?.uid === data.host_id}`);
+          console.log(`🔑 INITIAL BUTTON CONDITIONS - isHost: ${user?.uid === data.host_id}, status: ${data.status}, shouldShowButton: ${(user?.uid === data.host_id) && data.status === 'ready'}`);
         } else {
           console.log("Lobby not found during initial fetch.");
           throw new Error("Lobby not found or has been cancelled.");
@@ -170,6 +173,32 @@ export default function Lobby() {
               if (!lobbyDetails?.opponent_id && updatedLobby.opponent_id) {
                 console.log("🎉 OPPONENT JOINED EVENT DETECTED!");
                 console.log(`Opponent ID: ${updatedLobby.opponent_id}, Name: ${updatedLobby.opponent_name}`);
+                
+                // Force refresh lobby data from database to make sure status is updated correctly
+                (async () => {
+                  try {
+                    const { data, error } = await supabase
+                      .from('lobbies')
+                      .select('*')
+                      .eq('code', lobbyCode)
+                      .maybeSingle();
+                      
+                    if (error) {
+                      console.error('Error refreshing lobby data:', error);
+                      return;
+                    }
+                    
+                    if (data) {
+                      console.log('🔄 MANUALLY REFRESHED LOBBY DATA:', data);
+                      console.log(`Status in database: ${data.status}`);
+                      setLobbyDetails(data as LobbyData);
+                      setIsHost(user?.uid === data.host_id);
+                    }
+                  } catch (err) {
+                    console.error('Error refreshing lobby data:', err);
+                  }
+                })();
+                
                 toast({ 
                   title: "Opponent Joined!", 
                   description: `${updatedLobby.opponent_name || 'An opponent'} has joined the lobby.` 
@@ -202,6 +231,8 @@ export default function Lobby() {
               });
               
               setIsHost(user?.uid === updatedLobby.host_id);
+              console.log(`👑 HOST STATUS CHECK - Current user: ${user?.uid}, Host ID: ${updatedLobby.host_id}, isHost: ${user?.uid === updatedLobby.host_id}`);
+              console.log(`🔑 BUTTON CONDITIONS - isHost: ${user?.uid === updatedLobby.host_id}, status: ${updatedLobby.status}, shouldShowButton: ${(user?.uid === updatedLobby.host_id) && updatedLobby.status === 'ready'}`);
               
               // Handle status changes
               if (updatedLobby.status === 'starting') {
@@ -269,6 +300,8 @@ export default function Lobby() {
                       if (JSON.stringify(data) !== JSON.stringify(lobbyDetails)) {
                         console.log('SUBSCRIPTION CHECK: Forcing state update with latest DB data');
                         setLobbyDetails(data as LobbyData);
+                        setIsHost(user?.uid === data.host_id);
+                        console.log(`👑 SUBSCRIPTION CHECK HOST STATUS - Current user: ${user?.uid}, Host ID: ${data.host_id}, isHost: ${user?.uid === data.host_id}`);
                       }
                     }
                   } catch (e) {
@@ -324,6 +357,8 @@ export default function Lobby() {
                   if (data) {
                     console.log('Fetched fresh lobby data after opponent joined:', data);
                     setLobbyDetails(data as LobbyData);
+                    setIsHost(user?.uid === data.host_id);
+                    console.log(`👑 DIRECT CHANNEL HOST STATUS - Current user: ${user?.uid}, Host ID: ${data.host_id}, isHost: ${user?.uid === data.host_id}`);
                   }
                 } catch (error) {
                   console.error('Error fetching lobby after opponent joined:', error);
@@ -498,6 +533,32 @@ export default function Lobby() {
           if (!lobbyDetails?.opponent_id && polledLobby.opponent_id) {
             console.log("🎉 POLLING: OPPONENT JOINED EVENT DETECTED!");
             console.log(`Opponent ID: ${polledLobby.opponent_id}, Name: ${polledLobby.opponent_name}`);
+            
+            // Force refresh lobby data from database to make sure status is updated correctly
+            (async () => {
+              try {
+                const { data, error } = await supabase
+                  .from('lobbies')
+                  .select('*')
+                  .eq('code', lobbyCode)
+                  .maybeSingle();
+                  
+                if (error) {
+                  console.error('Error refreshing lobby data (polling):', error);
+                  return;
+                }
+                
+                if (data) {
+                  console.log('🔄 POLLING: MANUALLY REFRESHED LOBBY DATA:', data);
+                  console.log(`Status in database (polling): ${data.status}`);
+                  setLobbyDetails(data as LobbyData);
+                  setIsHost(user?.uid === data.host_id);
+                }
+              } catch (err) {
+                console.error('Error refreshing lobby data (polling):', err);
+              }
+            })();
+            
             toast({ 
               title: "Opponent Joined! (Poll)", 
               description: `${polledLobby.opponent_name || 'An opponent'} has joined the lobby.` 
@@ -520,6 +581,8 @@ export default function Lobby() {
           console.log(`⚙️ Updating local state with polled lobby data`);
           setLobbyDetails(polledLobby);
           setIsHost(user?.uid === polledLobby.host_id);
+          console.log(`👑 POLLING HOST STATUS - Current user: ${user?.uid}, Host ID: ${polledLobby.host_id}, isHost: ${user?.uid === polledLobby.host_id}`);
+          console.log(`🔑 POLLING BUTTON CONDITIONS - isHost: ${user?.uid === polledLobby.host_id}, status: ${polledLobby.status}, shouldShowButton: ${(user?.uid === polledLobby.host_id) && polledLobby.status === 'ready'}`);
           
           // Check for game starting
           if (polledLobby.status === 'starting' && lobbyDetails?.status !== 'starting') {
@@ -572,11 +635,12 @@ export default function Lobby() {
       
       // Clear intervals
       clearInterval(pollingInterval);
+      if (broadcastDebugInterval) clearInterval(broadcastDebugInterval);
       
       console.log(`All lobby subscription cleanup complete for: ${lobbyCode}`);
     };
 
-  }, [lobbyCode, isAuthenticated, navigate, toast]); // Dependencies
+  }, [lobbyCode, isAuthenticated, navigate, toast, user]); // Dependencies
 
 
   const handleLeaveLobby = async () => {
@@ -664,6 +728,17 @@ export default function Lobby() {
   };
 
   const handleStartGame = async () => {
+    // Debug for start game conditions
+    console.group('🚀 START GAME CONDITIONS CHECK');
+    console.log(`lobbyCode exists: ${!!lobbyCode}`);
+    console.log(`isHost: ${isHost}`);
+    console.log(`Current user: ${user?.uid}`);
+    console.log(`Host ID: ${lobbyDetails?.host_id}`);
+    console.log(`Lobby status: ${lobbyDetails?.status}`);
+    console.log(`Opponent ID: ${lobbyDetails?.opponent_id}`);
+    console.log(`All conditions met: ${!!lobbyCode && isHost && lobbyDetails?.status === 'ready'}`);
+    console.groupEnd();
+    
     if (!lobbyCode || !isHost || lobbyDetails?.status !== 'ready') return;
 
     setIsStartingGame(true);
@@ -697,6 +772,47 @@ export default function Lobby() {
     if (isPremium) return <PremiumHeader />;
     return <UserHeader />;
   };
+
+  // Debug for render time button conditions
+  console.group('🎮 RENDER TIME BUTTON CONDITIONS');
+  console.log(`isHost: ${isHost}`);
+  console.log(`lobbyDetails.status: ${lobbyDetails?.status}`);
+  console.log(`Should show start button: ${isHost && lobbyDetails?.status === 'ready'}`);
+  console.groupEnd();
+  
+  // Enforce status "ready" if an opponent has joined but status is still "waiting"
+  useEffect(() => {
+    if (lobbyDetails && lobbyDetails.opponent_id && lobbyDetails.status === 'waiting' && isHost) {
+      console.log('🛠️ FIXING STATUS: Opponent joined but status is still waiting');
+      
+      // Fix the status in the database
+      (async () => {
+        try {
+          const { error } = await supabase
+            .from('lobbies')
+            .update({ status: 'ready' })
+            .eq('code', lobbyCode);
+            
+          if (error) {
+            console.error('Error fixing lobby status:', error);
+            return;
+          }
+          
+          console.log('✅ Successfully updated lobby status to "ready"');
+          
+          // Update local state
+          setLobbyDetails(prev => {
+            if (prev) {
+              return { ...prev, status: 'ready' };
+            }
+            return prev;
+          });
+        } catch (err) {
+          console.error('Error fixing lobby status:', err);
+        }
+      })();
+    }
+  }, [lobbyDetails, isHost, lobbyCode]);
 
   if (isLoading) {
     return (
@@ -732,6 +848,7 @@ export default function Lobby() {
 
   // Main Lobby UI rendering using lobbyDetails (updated field names)
   const opponentJoined = !!lobbyDetails.opponent_id;
+  
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-muted/40">
       {renderHeader()}
@@ -853,4 +970,4 @@ export default function Lobby() {
       <LandingFooter />
     </div>
   );
-} 
+}

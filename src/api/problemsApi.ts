@@ -1,12 +1,16 @@
 /**
  * Problems API
  * 
- * This file provides functions for interacting with the problems database.
- * In a real application, these would make server requests.
+ * This file provides functions for interacting with the problems database via Supabase.
  */
 
-// Store problems in localStorage for now
-const LOCAL_STORAGE_KEY = 'codeduels_problems';
+import { createClient } from '@supabase/supabase-js';
+
+// Create Supabase client
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'http://127.0.0.1:54321';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJle' + 
+'HAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Problem Types
 export interface Example {
@@ -37,116 +41,156 @@ const DEFAULT_STARTER = `class Solution:
         # Your code here
         pass`;
 
-// Sample default problems
-const DEFAULT_PROBLEMS: PythonProblem[] = [
-  {
-    id: "two-sum",
-    title: "Two Sum",
-    difficulty: "easy",
-    description: "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice.",
-    examples: [
-      {input: "nums = [2,7,11,15], target = 9", output: "[0,1]", explanation: "Because nums[0] + nums[1] == 9, we return [0, 1]."},
-      {input: "nums = [3,2,4], target = 6", output: "[1,2]", explanation: "Because nums[1] + nums[2] == 6, we return [1, 2]."}
-    ],
-    test_cases: [
-      {input: {nums: [2,7,11,15], target: 9}, expected: [0,1]},
-      {input: {nums: [3,2,4], target: 6}, expected: [1,2]},
-      {input: {nums: [3,3], target: 6}, expected: [0,1]},
-      {input: {nums: [1,4,8,3,2,9,15], target: 17}, expected: [2,6], isHidden: true},
-      {input: {nums: [1,3,5,7,9], target: 8}, expected: [0,3], isHidden: true}
-    ],
-    starter_code: `class Solution:
-    def solve(self, nums, target):
-        # Your code here
-        pass`
-  },
-  {
-    id: "palindrome",
-    title: "Valid Palindrome",
-    difficulty: "easy",
-    description: "A phrase is a palindrome if, after converting all uppercase letters into lowercase letters and removing all non-alphanumeric characters, it reads the same forward and backward. Given a string s, return true if it is a palindrome, or false otherwise.",
-    examples: [
-      {input: "s = 'A man, a plan, a canal: Panama'", output: "True", explanation: "'amanaplanacanalpanama' is a palindrome."},
-      {input: "s = 'race a car'", output: "False", explanation: "'raceacar' is not a palindrome."}
-    ],
-    test_cases: [
-      {input: {s: "A man, a plan, a canal: Panama"}, expected: true},
-      {input: {s: "race a car"}, expected: false},
-      {input: {s: " "}, expected: true},
-      {input: {s: "No lemon, no melon"}, expected: true, isHidden: true},
-      {input: {s: "Was it a car or a cat I saw?"}, expected: true, isHidden: true}
-    ],
-    starter_code: `class Solution:
-    def solve(self, s):
-        # Your code here
-        pass`
+// Get all problems from Supabase
+export const getAllProblems = async (): Promise<PythonProblem[]> => {
+  try {
+    // Get problems
+    const { data: problems, error: problemsError } = await supabase
+      .from('coding_problems')
+      .select('*');
+    
+    if (problemsError) throw problemsError;
+    if (!problems || problems.length === 0) return [];
+    
+    // Process each problem to get examples, test cases, and starter code
+    const formattedProblems: PythonProblem[] = await Promise.all(
+      problems.map(async (problem) => {
+        // Get examples
+        const { data: examples, error: examplesError } = await supabase
+          .from('problem_examples')
+          .select('*')
+          .eq('problem_id', problem.problem_id)
+          .order('display_order', { ascending: true });
+        
+        if (examplesError) throw examplesError;
+        
+        // Get test cases
+        const { data: testCases, error: testCasesError } = await supabase
+          .from('problem_test_cases')
+          .select('*')
+          .eq('problem_id', problem.problem_id)
+          .order('test_order', { ascending: true });
+        
+        if (testCasesError) throw testCasesError;
+        
+        // Get starter code (Python)
+        const { data: starterCode, error: starterCodeError } = await supabase
+          .from('problem_starter_code')
+          .select('*')
+          .eq('problem_id', problem.problem_id)
+          .eq('language', 'python')
+          .single();
+        
+        if (starterCodeError && starterCodeError.code !== 'PGRST116') throw starterCodeError;
+        
+        // Format examples
+        const formattedExamples: Example[] = examples?.map(ex => ({
+          input: ex.input,
+          output: ex.output,
+          explanation: ex.explanation || undefined
+        })) || [];
+        
+        // Format test cases
+        const formattedTestCases: TestCase[] = testCases?.map(tc => ({
+          input: tc.input_json,
+          expected: tc.expected_json,
+          isHidden: false // All test cases visible for now
+        })) || [];
+        
+        return {
+          id: problem.problem_id,
+          title: problem.title,
+          difficulty: problem.difficulty,
+          description: problem.description,
+          examples: formattedExamples,
+          test_cases: formattedTestCases,
+          starter_code: starterCode?.code || DEFAULT_STARTER
+        };
+      })
+    );
+    
+    return formattedProblems;
+  } catch (error) {
+    console.error('Error fetching problems:', error);
+    return [];
   }
-];
-
-// Initialize problems in localStorage if they don't exist
-const initProblems = () => {
-  const problems = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (!problems) {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(DEFAULT_PROBLEMS));
-  }
-};
-
-// Get all problems
-export const getAllProblems = (): PythonProblem[] => {
-  initProblems();
-  const problems = localStorage.getItem(LOCAL_STORAGE_KEY);
-  return problems ? JSON.parse(problems) : [];
 };
 
 // Get a problem by ID
-export const getProblemById = (id: string): PythonProblem | null => {
-  const problems = getAllProblems();
+export const getProblemById = async (id: string): Promise<PythonProblem | null> => {
+  const problems = await getAllProblems();
   return problems.find(p => p.id === id) || null;
 };
 
 // Add a new problem
-export const addProblem = (problem: Partial<PythonProblem>): PythonProblem => {
-  // Generate a unique ID if not provided
-  const newProblem: PythonProblem = {
-    id: problem.id || `problem-${Date.now()}`,
-    title: problem.title || 'Untitled Problem',
-    difficulty: problem.difficulty || 'medium',
-    description: problem.description || 'No description provided.',
-    examples: problem.examples || [],
-    test_cases: problem.test_cases || [],
-    starter_code: problem.starter_code || DEFAULT_STARTER
-  };
-  
-  const problems = getAllProblems();
-  problems.push(newProblem);
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(problems));
-  
-  return newProblem;
-};
-
-// Update an existing problem
-export const updateProblem = (id: string, updates: Partial<PythonProblem>): PythonProblem | null => {
-  const problems = getAllProblems();
-  const index = problems.findIndex(p => p.id === id);
-  
-  if (index === -1) return null;
-  
-  const updatedProblem = { ...problems[index], ...updates };
-  problems[index] = updatedProblem;
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(problems));
-  
-  return updatedProblem;
-};
-
-// Delete a problem
-export const deleteProblem = (id: string): boolean => {
-  const problems = getAllProblems();
-  const filteredProblems = problems.filter(p => p.id !== id);
-  
-  if (filteredProblems.length === problems.length) return false;
-  
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(filteredProblems));
-  return true;
+export const addProblem = async (problem: Partial<PythonProblem>): Promise<PythonProblem | null> => {
+  try {
+    // Generate problem ID if not provided
+    const problemId = problem.id || `problem-${Date.now()}`;
+    
+    // Insert into coding_problems table
+    const { error: problemError } = await supabase
+      .from('coding_problems')
+      .insert({
+        problem_id: problemId,
+        title: problem.title || 'Untitled Problem',
+        difficulty: problem.difficulty || 'medium',
+        description: problem.description || 'No description provided.'
+      });
+    
+    if (problemError) throw problemError;
+    
+    // Insert examples if provided
+    if (problem.examples && problem.examples.length > 0) {
+      const formattedExamples = problem.examples.map((ex, index) => ({
+        problem_id: problemId,
+        input: ex.input,
+        output: ex.output,
+        explanation: ex.explanation || null,
+        display_order: index + 1
+      }));
+      
+      const { error: examplesError } = await supabase
+        .from('problem_examples')
+        .insert(formattedExamples);
+      
+      if (examplesError) throw examplesError;
+    }
+    
+    // Insert test cases if provided
+    if (problem.test_cases && problem.test_cases.length > 0) {
+      const formattedTestCases = problem.test_cases.map((tc, index) => ({
+        problem_id: problemId,
+        input_json: tc.input,
+        expected_json: tc.expected,
+        test_order: index + 1
+      }));
+      
+      const { error: testCasesError } = await supabase
+        .from('problem_test_cases')
+        .insert(formattedTestCases);
+      
+      if (testCasesError) throw testCasesError;
+    }
+    
+    // Insert starter code
+    const { error: starterCodeError } = await supabase
+      .from('problem_starter_code')
+      .insert({
+        problem_id: problemId,
+        language: 'python',
+        code: problem.starter_code || DEFAULT_STARTER,
+        method_name: 'solve'
+      });
+    
+    if (starterCodeError) throw starterCodeError;
+    
+    // Return the newly created problem
+    return getProblemById(problemId);
+  } catch (error) {
+    console.error('Error adding problem:', error);
+    return null;
+  }
 };
 
 // Simple validation for code submission - this would typically happen server-side

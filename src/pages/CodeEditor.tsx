@@ -33,29 +33,61 @@ const CodeEditor = () => {
   const [code, setCode] = useState<string>("");
   const [isRunningCode, setIsRunningCode] = useState<boolean>(false);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const { toast } = useToast();
 
   // Load problems
   useEffect(() => {
-    const loadedProblems = getAllProblems();
-    setProblems(loadedProblems);
+    const fetchProblems = async () => {
+      setIsLoading(true);
+      try {
+        const loadedProblems = await getAllProblems();
+        setProblems(loadedProblems);
+        
+        // Select first problem by default
+        if (loadedProblems.length > 0) {
+          setSelectedProblemId(loadedProblems[0].id);
+          setCurrentProblem(loadedProblems[0]);
+          setCode(loadedProblems[0].starter_code);
+        } else {
+          toast({
+            title: "No problems found",
+            description: "No coding problems are available. Check your database connection.",
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        console.error('Error loading problems:', error);
+        toast({
+          title: "Error loading problems",
+          description: "Failed to load coding problems. Please check the console for details.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    // Select first problem by default
-    if (loadedProblems.length > 0) {
-      setSelectedProblemId(loadedProblems[0].id);
-      setCurrentProblem(loadedProblems[0]);
-      setCode(loadedProblems[0].starter_code);
-    }
-  }, []);
+    fetchProblems();
+  }, [toast]);
 
   // Handle problem selection
-  const handleProblemChange = (problemId: string) => {
-    const problem = getProblemById(problemId);
-    if (problem) {
-      setSelectedProblemId(problemId);
-      setCurrentProblem(problem);
-      setCode(problem.starter_code);
-      setTestResults([]);
+  const handleProblemChange = async (problemId: string) => {
+    try {
+      const problem = await getProblemById(problemId);
+      if (problem) {
+        setSelectedProblemId(problemId);
+        setCurrentProblem(problem);
+        setCode(problem.starter_code);
+        setTestResults([]);
+      }
+    } catch (error) {
+      console.error('Error loading problem:', error);
+      toast({
+        title: "Error loading problem",
+        description: "Failed to load the selected problem. Please try again.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -150,39 +182,70 @@ const CodeEditor = () => {
     }
   };
 
-  // Add new problem (placeholder)
-  const addNewProblem = () => {
-    const newProblem = {
-      title: "New Problem",
-      difficulty: "medium",
-      description: "Please update this description with your problem statement.",
-      examples: [
-        {input: "Example Input", output: "Example Output", explanation: "Example explanation"}
-      ],
-      test_cases: [
-        {input: {}, expected: null}
-      ],
-      starter_code: `class Solution:
+  // Add new problem
+  const addNewProblem = async () => {
+    try {
+      const newProblem = {
+        title: "New Problem",
+        difficulty: "medium",
+        description: "Please update this description with your problem statement.",
+        examples: [
+          {input: "Example Input", output: "Example Output", explanation: "Example explanation"}
+        ],
+        test_cases: [
+          {input: {}, expected: null}
+        ],
+        starter_code: `class Solution:
     def solve(self, params):
         # Your code here
         pass`
-    };
-    
-    const createdProblem = addProblem(newProblem);
-    
-    toast({
-      title: "Problem created",
-      description: "A new problem template has been created. Select it from the dropdown to edit."
-    });
-    
-    // Refresh problems list
-    setProblems(getAllProblems());
-    
-    // Select the new problem
-    setSelectedProblemId(createdProblem.id);
-    setCurrentProblem(createdProblem);
-    setCode(createdProblem.starter_code);
+      };
+      
+      const createdProblem = await addProblem(newProblem);
+      
+      if (createdProblem) {
+        toast({
+          title: "Problem created",
+          description: "A new problem template has been created. Select it from the dropdown to edit."
+        });
+        
+        // Refresh problems list
+        const refreshedProblems = await getAllProblems();
+        setProblems(refreshedProblems);
+        
+        // Select the new problem
+        setSelectedProblemId(createdProblem.id);
+        setCurrentProblem(createdProblem);
+        setCode(createdProblem.starter_code);
+      } else {
+        toast({
+          title: "Error creating problem",
+          description: "Failed to create a new problem. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error creating problem:', error);
+      toast({
+        title: "Error creating problem",
+        description: "Failed to create a new problem. Please check the console for details.",
+        variant: "destructive"
+      });
+    }
   };
+
+  // Display loading state
+  if (isLoading) {
+    return (
+      <div className="container mx-auto p-4 flex items-center justify-center h-screen">
+        <div className="text-center">
+          <Terminal className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+          <h2 className="text-2xl font-bold">Loading problems...</h2>
+          <p className="text-muted-foreground">Please wait while we fetch the coding challenges.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 max-w-7xl">

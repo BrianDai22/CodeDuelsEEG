@@ -50,6 +50,17 @@ export default function FindMatch() {
     console.log("Creating lobby with new code:", newCode, "and host ID:", user?.uid || `guest_${Date.now()}`);
 
     try {
+      // First, check if lobbies table exists by trying to retrieve its structure
+      const { error: tableCheckError } = await supabase
+        .from('lobbies')
+        .select('id', { count: 'exact', head: true });
+      
+      if (tableCheckError) {
+        console.error("Error checking lobbies table:", tableCheckError);
+        throw new Error(`Table error: ${tableCheckError.message}`);
+      }
+      
+      // Now proceed with insert
       const { error } = await supabase
         .from('lobbies')
         .insert({
@@ -68,20 +79,38 @@ export default function FindMatch() {
 
     } catch (error: any) {
       console.error("Error creating Supabase lobby: ", error);
-      console.error("Supabase error message: ", error?.message);
-      console.error("Supabase error details: ", error?.details);
-      console.error("Supabase error hint: ", error?.hint);
+      
+      // Handle different types of error objects
+      const supabaseError = error?.error || error;
+      const errorMessage = supabaseError?.message || error?.message || "Unknown error";
+      const errorDetails = supabaseError?.details || error?.details || "";
+      const errorHint = supabaseError?.hint || error?.hint || "";
+      const errorCode = supabaseError?.code || error?.code || "";
+      const errorStatus = supabaseError?.status || error?.status || "";
+      
+      console.error("Error details:", {
+        message: errorMessage,
+        details: errorDetails,
+        hint: errorHint,
+        code: errorCode,
+        status: errorStatus
+      });
 
       let userMessage = "Failed to create lobby. Please try again.";
-      if (error.message?.includes('duplicate key value violates unique constraint')) {
+      if (errorMessage.includes('duplicate key value violates unique constraint')) {
           userMessage = "Failed to create lobby. Generated code already exists. Please try again.";
-      } else if (error.message?.includes('check constraint')) {
+      } else if (errorMessage.includes('check constraint')) {
           userMessage = "Failed to create lobby due to invalid data.";
-      } else if (error.details?.includes('violates row-level security policy')) { // Check for RLS
+      } else if (errorDetails.includes('violates row-level security policy')) {
           userMessage = "You do not have permission to create a lobby.";
-      } else if (error.message) { // Use the error message if available
-          userMessage = `Failed to create lobby: ${error.message}`;
+      } else if (errorMessage.includes('Table error')) {
+          userMessage = "Lobby system not available. Please try again later.";
+      } else if (errorMessage.includes('404') || errorStatus === 404) {
+          userMessage = "Lobby system is being set up. Please refresh and try again.";
+      } else if (errorMessage) {
+          userMessage = `Failed to create lobby: ${errorMessage}`;
       }
+      
       toast({ title: "Error Creating Lobby", description: userMessage, variant: "destructive" });
       setLobbyMode(null);
     } finally {
@@ -118,16 +147,27 @@ export default function FindMatch() {
         throw new Error(`Lobby ${codeToJoin} is not available to join.`);
       }
 
-      const { error: updateError } = await supabase
+      console.log(`Found lobby to join:`, lobbyData);
+      console.log(`Updating lobby with opponent details and setting status to 'ready'`);
+      
+      // Prepare update payload
+      const updatePayload = {
+        opponent_id: user?.uid || `guest_${Date.now()}`, // Use Firebase UID or fallback
+        opponent_name: user?.displayName || user?.email || 'Anonymous Player', // Use actual user info
+        status: 'ready'
+      };
+      
+      console.log(`Update payload:`, updatePayload);
+
+      const { data: updatedData, error: updateError } = await supabase
         .from('lobbies')
-        .update({
-          opponent_id: user?.uid || `guest_${Date.now()}`, // Use Firebase UID or fallback
-          opponent_name: user?.displayName || user?.email || 'Anonymous Player', // Use actual user info
-          status: 'ready'
-        })
-        .eq('code', codeToJoin);
+        .update(updatePayload)
+        .eq('code', codeToJoin)
+        .select();
 
       if (updateError) throw new Error("Failed to join the lobby.");
+      
+      console.log(`Lobby successfully updated:`, updatedData);
 
       toast({ title: "Joining Lobby...", description: `Connecting to lobby ${codeToJoin}` });
       navigate(`/lobby/${codeToJoin}`);
