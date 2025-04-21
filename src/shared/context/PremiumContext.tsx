@@ -49,28 +49,20 @@ export const PremiumProvider = ({ children }: { children: React.ReactNode }) => 
     }
 
     try {
-      setLoading(true);
-      const getUserRole = httpsCallable<any, { isAdmin: boolean; isPremium: boolean }>(
-        functions, 
-        'getUserRole'
-      );
+      const getPremiumStatus = httpsCallable(functions, 'getUserRole');
+      const result = await getPremiumStatus({ role: 'isPremium' });
       
-      // Backend verifies premium status directly - no email needed since auth is used
-      const result = await getUserRole({});
+      // @ts-ignore
+      const hasPremiumRole = result.data.hasRole === true;
       
-      const verified = result.data.isPremium === true;
+      // Update local state to match server
+      setIsPremium(hasPremiumRole);
       
-      // If the backend says something different than what we have, refresh user
-      if (verified !== isPremium) {
-        await refreshUser();
-      }
-      
-      return verified;
+      return hasPremiumRole;
     } catch (error) {
-      // Silent error handling
+      console.error('Error verifying premium status:', error);
+      toast.error('Error verifying premium status. Please try again.');
       return false;
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -119,10 +111,10 @@ export const PremiumProvider = ({ children }: { children: React.ReactNode }) => 
   return <PremiumContext.Provider value={value}>{children}</PremiumContext.Provider>;
 };
 
-export function usePremium() {
+export const usePremium = () => {
   const context = useContext(PremiumContext);
   if (context === undefined) {
     throw new Error('usePremium must be used within a PremiumProvider');
   }
   return context;
-} 
+}; 

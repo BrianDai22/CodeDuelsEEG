@@ -48,132 +48,74 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     setIsAdmin(adminStatus);
     
     // Only a presentation preference, doesn't affect actual permissions
-    const storedAdminMode = sessionStorage.getItem('adminMode');
-    if (storedAdminMode) {
-      const { isAdminMode: storedMode, userId } = JSON.parse(storedAdminMode);
-      // Only apply stored admin mode if it belongs to the current user and they're an admin
-      if (userId === user.id) {
-        setIsAdminMode(storedMode && adminStatus);
-      } else {
-        // Clear stored admin mode if it belongs to a different user
-        sessionStorage.removeItem('adminMode');
-      }
-    }
+    const savedAdminMode = sessionStorage.getItem('adminMode') === 'true';
+    setIsAdminMode(savedAdminMode && adminStatus);
     
     setLoading(false);
   }, [user, isAuthenticated]);
 
-  // Verify admin status directly with backend
-  // This can be used for critical admin actions or page loads
+  // Verify admin status with backend
   const verifyAdminStatus = async (): Promise<boolean> => {
-    if (!user || !user.email) {
+    if (!user) {
       return false;
     }
 
     try {
-      setLoading(true);
-      const getUserRole = httpsCallable<any, { isAdmin: boolean; isPremium: boolean }>(
-        functions, 
-        'getUserRole'
-      );
+      const getAdminStatus = httpsCallable(functions, 'getUserRole');
+      const result = await getAdminStatus({ role: 'isAdmin' });
       
-      // Backend verifies admin status directly - no email needed since auth is used
-      const result = await getUserRole({});
+      // Result is the truth about admin status from the server
+      // @ts-ignore
+      const hasAdminRole = result.data.hasRole === true;
       
-      const verified = result.data.isAdmin === true;
+      // Update local state to match server 
+      setIsAdmin(hasAdminRole);
       
-      // If the backend says something different than what we have, refresh user
-      if (verified !== isAdmin) {
-        await refreshUser();
-      }
-      
-      return verified;
+      return hasAdminRole;
     } catch (error) {
-      // Silent error handling
+      console.error('Error verifying admin status:', error);
+      toast.error('Error verifying admin status. Please try again.');
       return false;
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Custom setter for admin mode that persists to sessionStorage - UI preference only
-  const handleSetAdminMode = (value: boolean) => {
-    if (!isAuthenticated || !user || user.id.startsWith('guest_') || !isAdmin) {
-      setIsAdminMode(false);
-      sessionStorage.removeItem('adminMode');
+  // Update admin mode UI preference (doesn't grant permissions)
+  const handleSetIsAdminMode = (value: boolean): void => {
+    // Can only set admin mode if actually an admin
+    if (value && !isAdmin) {
+      toast.error('You must be an admin to enable admin mode.');
       return;
     }
-
+    
     setIsAdminMode(value);
     
-    // Save admin mode preference to sessionStorage
     if (value) {
-      sessionStorage.setItem('adminMode', JSON.stringify({
-        isAdminMode: value,
-        userId: user.id
-      }));
+      sessionStorage.setItem('adminMode', 'true');
     } else {
       sessionStorage.removeItem('adminMode');
     }
   };
 
-  // Custom setter for admin status that uses backend Cloud Function
-  const handleSetAdmin = async (value: boolean) => {
-    if (!isAuthenticated || !user || user.id.startsWith('guest_')) {
-      setIsAdmin(false);
-      return;
-    }
-
-    try {
-      // Call the Cloud Function to update admin status securely
-      const setUserAdminStatus = httpsCallable(
-        functions, 
-        'setUserAdminStatus'
-      );
-      
-      const result = await setUserAdminStatus({
-        userId: user.id,
-        isAdmin: value
-      });
-      
-      // Update local state only after backend confirms change
-      const response = result.data as { success: boolean; message: string };
-      
-      if (response.success) {
-        // Refresh user to get latest roles from backend
-        await refreshUser();
-        toast.success(response.message);
-        
-        // Clear admin mode if admin status is turned off
-        if (!value) {
-          setIsAdminMode(false);
-          sessionStorage.removeItem('adminMode');
-        }
-      } else {
-        toast.error('Failed to update admin status');
-      }
-    } catch (error: any) {
-      // Show error toast but don't log details
-      toast.error('Failed to update admin status');
-    }
-  };
-
-  const value = {
-    isAdmin,
-    isAdminMode,
-    loading,
-    setIsAdmin: handleSetAdmin,
-    setIsAdminMode: handleSetAdminMode,
-    verifyAdminStatus
-  };
-
-  return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
+  return (
+    <AdminContext.Provider
+      value={{
+        isAdmin,
+        isAdminMode,
+        loading,
+        setIsAdminMode: handleSetIsAdminMode,
+        setIsAdmin,
+        verifyAdminStatus
+      }}
+    >
+      {children}
+    </AdminContext.Provider>
+  );
 };
 
-export function useAdmin() {
+export const useAdmin = () => {
   const context = useContext(AdminContext);
   if (context === undefined) {
     throw new Error('useAdmin must be used within an AdminProvider');
   }
   return context;
-} 
+}; 
