@@ -1,14 +1,32 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
+import { useAuth } from '@features/auth/AuthContext';
+import { useAdmin } from '@shared/context/AdminContext';
+import { usePremium } from '@shared/context/PremiumContext';
 import { Button } from '@ui/button';
 import { useToast } from '@shared/hooks/ui/use-toast';
-import { Progress } from '@ui/data/progress';
-import { Clock, Check, ShieldAlert, Timer, Shield, Crown } from 'lucide-react';
-import CodeEditor from '@shared/components/CodeEditor';
-import { Card, CardContent } from '@ui/data/card';
+import { 
+  Clock, Play, Terminal, Code, User, Swords, Check, X, 
+  ChevronDown, ChevronUp, TimerIcon, ShieldAlert, Timer, 
+  Shield, Crown, Home 
+} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@ui/data/card';
+import { supabase } from '@shared/config/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { Allotment } from "allotment";
+import "allotment/dist/style.css";
+import { Editor } from '@monaco-editor/react';
+import * as Monaco from 'monaco-editor';
+import { ScrollArea } from '@ui/layout/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@ui/layout/tabs';
 import { Badge } from '@ui/data/badge';
-import { useAdmin } from '@shared/context/AdminContext';
-import { useAuth } from '@features/auth/AuthContext';
+import { Progress } from '@ui/data/progress';
+import { Avatar, AvatarFallback, AvatarImage } from '@ui/data/avatar';
+import { toast as sonnerToast } from "sonner";
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import CodeEditor from '@shared/components/CodeEditor';
+import MonacoEditor from '@shared/components/MonacoEditor';
 import LandingHeader from '@shared/components/LandingHeader';
 import PremiumHeader from '@shared/components/PremiumHeader';
 import LandingFooter from '@shared/components/LandingFooter';
@@ -29,32 +47,179 @@ const sampleProblems = {
   }
 };
 
-const Battle = () => {
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+// Add missing type definitions and constants
+interface Problem {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  starterCode: string;
+  methodName?: string;
+  examples: { input: string; output: string; explanation?: string }[];
+  testCases: TestCase[];
+  languages?: Record<string, string>;
+}
+
+interface TestCase {
+  input: any;
+  expected: any;
+}
+
+interface TestResult {
+  passed: boolean;
+  input: any;
+  expected: any;
+  actual: any;
+  message: string;
+  time?: number;
+  memory?: number;
+  error?: string | null;
+}
+
+const MAX_HEALTH = 100;
+
+// Define coding problems
+const codingProblems: Problem[] = [];
+
+// --- Helper Function --- Ensure this exists
+const getInitialCode = (problemId: string): string => {
+  return codingProblems.find(p => p.id === problemId)?.starterCode || '';
+};
+
+// --- Custom Comparison Logic (Improved) ---
+const areOutputsEqual = (expected: any, actual: any): boolean => {
+  console.log(`Comparing: Expected=${JSON.stringify(expected)} (${typeof expected}), Actual=${JSON.stringify(actual)} (${typeof actual})`);
+
+  // Strict equality for null/undefined first
+  if (expected === null && actual === null) return true;
+  if (expected === undefined && actual === undefined) return true;
+  if (expected === null || expected === undefined || actual === null || actual === undefined) {
+    return false;
+  }
+
+  // Handle booleans explicitly (Python output is 'True'/'False')
+  if (typeof expected === 'boolean') {
+    if (typeof actual === 'boolean') return expected === actual;
+    if (typeof actual === 'string') {
+      if (expected && actual.toLowerCase() === 'true') return true;
+      if (!expected && actual.toLowerCase() === 'false') return true;
+    }
+    return false;
+  }
+
+  // Handle numbers (Python output might be string representation)
+  if (typeof expected === 'number') {
+    if (typeof actual === 'number') return expected === actual;
+    // Allow comparison if the string representation matches the number
+    if (typeof actual === 'string' && String(expected) === actual) return true;
+    // Try parsing the string actual as a number
+    if (typeof actual === 'string') {
+        try {
+            const parsedActual = parseFloat(actual);
+            if (!isNaN(parsedActual) && expected === parsedActual) return true;
+        } catch {}
+    }
+    return false;
+  }
+
+  // Handle string comparisons (trim whitespace)
+  if (typeof expected === 'string') {
+     if (typeof actual !== 'string') return false;
+     return expected.trim() === actual.trim();
+  }
+
+  // Handle arrays (compare elements after sorting simple types)
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return false;
+    if (expected.length !== actual.length) return false;
+
+    // Create copies to avoid modifying original data
+    const arr1 = [...expected];
+    const arr2 = [...actual];
+
+    // Attempt to sort if elements are primitives (string, number)
+    try {
+        const sortedArr1 = arr1.sort();
+        const sortedArr2 = arr2.sort();
+        // Recursively compare each element
+        for (let i = 0; i < sortedArr1.length; i++) {
+            if (!areOutputsEqual(sortedArr1[i], sortedArr2[i])) {
+                console.log(`Array element mismatch at index ${i}: Expected=${sortedArr1[i]}, Actual=${sortedArr2[i]}`);
+                return false;
+            }
+        }
+        return true;
+    } catch (e) {
+        console.warn("Failed to sort arrays for comparison, falling back to stringify", e);
+        // Fallback for complex/unsortable arrays: stringify comparison
+        return JSON.stringify(arr1) === JSON.stringify(arr2);
+    }
+  }
+
+  // Fallback for other types (objects, etc.) using stringify
+  try {
+    return JSON.stringify(expected) === JSON.stringify(actual);
+  } catch (e) {
+    console.error("Comparison failed with stringify:", e);
+    return false;
+  }
+};
+
+// Get proper monaco editor language ID
+const getMonacoLanguage = (language: string): string => {
+  switch (language.toLowerCase()) {
+    case 'python':
+      return 'python';
+    case 'typescript':
+      return 'typescript';
+    case 'javascript':
+    default:
+      return 'javascript';
+  }
+};
+
+// Get file extension for language
+const getFileExtension = (language: string): string => {
+  switch (language.toLowerCase()) {
+    case 'python':
+      return '.py';
+    case 'typescript':
+      return '.ts';
+    case 'javascript':
+    default:
+      return '.js';
+  }
+};
+
+const Battle: React.FC = () => {
   const navigate = useNavigate();
+  const { lobbyCode } = useParams<{ lobbyCode: string }>();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const { toast } = useToast();
+  const { user, isAuthenticated } = useAuth();
   const { isAdmin } = useAdmin();
-  const { isAuthenticated } = useAuth();
+  const { isPremium } = usePremium();
   
   const difficulty = searchParams.get('difficulty') || 'easy';
   const problem = sampleProblems[difficulty];
   
+  const [channel, setChannel] = useState<RealtimeChannel | null>(null);
+  
+  const [isReady, setIsReady] = useState(false);
+  const [isLoadingProblems, setIsLoadingProblems] = useState(true);
+  const [problems, setProblems] = useState<Problem[]>([]);
   const [matchStarted, setMatchStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(300);
   const [playerHealth, setPlayerHealth] = useState(100);
   const [opponentHealth, setOpponentHealth] = useState(100);
-  const [playerCode, setPlayerCode] = useState(problem.starter);
+  const [playerCode, setPlayerCode] = useState<string>(problem.starter);
   const [opponentProgress, setOpponentProgress] = useState(0);
   const [playerPassedTests, setPlayerPassedTests] = useState(0);
-  const [isPremium, setIsPremium] = useState(() => {
-    // Initialize from localStorage
-    const userProfile = localStorage.getItem('userProfile');
-    if (userProfile) {
-      const profile = JSON.parse(userProfile);
-      return profile.isPremium || isAdmin;
-    }
-    return false;
-  });
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -79,7 +244,27 @@ const Battle = () => {
     return () => clearInterval(timer);
   }, [matchStarted]);
 
-  const formatTime = (seconds) => {
+  // Effect to simulate opponent progress
+  useEffect(() => {
+    if (!matchStarted) return;
+    
+    const interval = setInterval(() => {
+      setOpponentProgress(prev => {
+        const newProgress = prev + (Math.random() * 0.5);
+        if (newProgress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => navigate('/results?result=lose'), 1000);
+          return 100;
+        }
+        return newProgress;
+      });
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [matchStarted, navigate]);
+
+  // Add formatTime function
+  const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
@@ -124,12 +309,18 @@ const Battle = () => {
               </div>
               <span>{playerHealth}%</span>
             </div>
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              <span>{formatTime(timeLeft)}</span>
+            </div>
           </div>
-          
-          <CodeEditor
-            code={playerCode}
+
+          <MonacoEditor
+            value={playerCode}
             onChange={setPlayerCode}
-            className="flex-grow"
+            language="javascript"
+            className="flex-grow rounded-md overflow-hidden border"
+            onRun={runTests}
           />
           
           <div className="mt-4">
@@ -139,7 +330,7 @@ const Battle = () => {
             </Button>
           </div>
         </div>
-        
+
         <div className="flex flex-col">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
@@ -152,7 +343,7 @@ const Battle = () => {
             <Badge variant="outline">Progress: {Math.round(opponentProgress)}%</Badge>
           </div>
           
-          <div className="flex-grow blur-sm relative">
+          <div className="flex-grow blur-sm relative border rounded-md">
             <div className="absolute inset-0 flex items-center justify-center">
               <p className="text-muted-foreground">Opponent's code is hidden</p>
             </div>
