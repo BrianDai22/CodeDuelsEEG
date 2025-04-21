@@ -3,15 +3,17 @@ import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@features/auth/AuthContext';
 import { useAdmin } from '@shared/context/AdminContext';
+import { usePremium } from '@shared/context/PremiumContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@ui/data/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@ui/feedback/dropdown-menu';
 import { Badge } from '@ui/data/badge';
-import { Code, User, Settings, LogOut, Crown, Shield, Search, ChevronDown, History, HomeIcon } from 'lucide-react';
+import { Code, User, Settings, LogOut, Crown, Shield, Search, ChevronDown, History, Home } from 'lucide-react';
 
 const PremiumHeader = () => {
   const navigate = useNavigate();
   const { user, logout, isAuthenticated } = useAuth();
-  const { isAdmin, isPremium } = useAdmin();
+  const { isAdmin } = useAdmin();
+  const { isPremium } = usePremium();
 
   return (
     <header className="border-b border-border py-4 px-6 bg-gradient-to-r from-gray-900 to-gray-800 text-white">
@@ -36,13 +38,19 @@ const PremiumHeader = () => {
               <span>Premium Dashboard</span>
             </div>
           </Button>
-          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/leaderboard')}>
+          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/premium/leaderboard')}>
             Leaderboard
           </Button>
-          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/find-match')}>
+          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/premium/find-match')}>
             <div className="flex items-center space-x-2">
               <Search className="h-5 w-5" />
               <span>Find Match</span>
+            </div>
+          </Button>
+          <Button variant="link" className="text-lg text-white hover:text-gray-300" onClick={() => navigate('/premium/match-history')}>
+            <div className="flex items-center space-x-2">
+              <History className="h-5 w-5" />
+              <span>Match History</span>
             </div>
           </Button>
           {isAdmin && (
@@ -94,13 +102,13 @@ const PremiumHeader = () => {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem asChild>
-                  <Link to="/match-history" className="flex items-center">
+                  <Link to="/premium/match-history" className="flex items-center">
                     <History className="mr-2 h-4 w-4" />
                     <span>Match History</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link to="/settings" className="flex items-center">
+                  <Link to="/premium/settings" className="flex items-center">
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>
                   </Link>
