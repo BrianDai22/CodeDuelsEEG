@@ -1,0 +1,78 @@
+{
+  "rules": {
+    // Require authentication for all database access by default
+    ".read": false,
+    ".write": false,
+    
+    "users": {
+      "$userId": {
+        // Users can read their own data
+        ".read": "auth != null && auth.uid === $userId",
+        
+        // Users can write their own basic profile data but not status flags
+        ".write": "auth != null && auth.uid === $userId",
+        
+        // Specific field rules
+        "username": {
+          ".validate": "newData.isString() && newData.val().length >= 3 && newData.val().length <= 30"
+        },
+        "photoURL": {
+          ".validate": "newData.isString() && newData.val().matches(/^https:\\/\\/.*/)"
+        },
+        "createdAt": {
+          ".validate": "newData.isString() || newData.val() === now"
+        },
+        
+        // Prevent users from modifying their own admin/premium status
+        "isAdmin": {
+          ".write": false
+        },
+        "isPremium": {
+          ".write": false
+        }
+      },
+      
+      // Allow admins to read all user data
+      ".read": "auth != null && root.child('users').child(auth.uid).child('isAdmin').val() === true"
+    },
+    
+    "premiumPayments": {
+      "$userId": {
+        // Users can read their own payment data
+        ".read": "auth != null && auth.uid === $userId",
+        
+        // Only backend functions can write payment data
+        ".write": false,
+        
+        "$paymentId": {
+          ".validate": "newData.hasChildren(['email', 'paymentDate', 'amount', 'status'])"
+        }
+      },
+      
+      // Allow admins to read all payment data
+      ".read": "auth != null && root.child('users').child(auth.uid).child('isAdmin').val() === true"
+    },
+    
+    "matchHistory": {
+      "$userId": {
+        // Users can read their own match history
+        ".read": "auth != null && auth.uid === $userId",
+        
+        // Users can only create new matches, not modify existing ones
+        ".write": "auth != null && auth.uid === $userId && !data.exists()",
+        
+        "$matchId": {
+          ".validate": "newData.hasChildren(['timestamp', 'opponent', 'result'])"
+        }
+      }
+    },
+    
+    "leaderboard": {
+      // Anyone can read the leaderboard
+      ".read": true,
+      
+      // Only backend functions can update the leaderboard
+      ".write": false
+    }
+  }
+} 

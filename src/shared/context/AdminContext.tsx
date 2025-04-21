@@ -1,33 +1,35 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getUserProfile } from '@shared/lib/api';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from '@features/auth/AuthContext';
-import { AUTHORIZED_ADMIN_EMAILS } from '@shared/lib/api';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { toast } from 'sonner';
+import { SecureLogger } from '@shared/utils/secureLogging';
 
+// AdminContext is strictly a frontend concern - it doesn't make decisions
+// about admin status, it only presents what the backend has determined
 interface AdminContextType {
   isAdmin: boolean;
-  isAdminMode: boolean;
+  isAdminMode: boolean;  // UI preference only
+  loading: boolean;
   setIsAdminMode: (value: boolean) => void;
   setIsAdmin: (value: boolean) => void;
-  loading: boolean;
-  isPremium: boolean;
+  verifyAdminStatus: () => Promise<boolean>; // New method to verify with backend
 }
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshUser } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isPremium, setIsPremium] = useState(false);
+  const functions = getFunctions();
 
-  // Load admin status from localStorage on mount and when user changes
+  // Load admin status when user changes - only trust the user.isAdmin from server
   useEffect(() => {
     if (!isAuthenticated || !user) {
       setIsAdmin(false);
       setIsAdminMode(false);
-      setIsPremium(false);
-      localStorage.removeItem('adminMode');
+      sessionStorage.removeItem('adminMode');
       setLoading(false);
       return;
     }
@@ -36,107 +38,84 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
     if (user.id.startsWith('guest_')) {
       setIsAdmin(false);
       setIsAdminMode(false);
-      setIsPremium(false);
-      localStorage.removeItem('adminMode');
+      sessionStorage.removeItem('adminMode');
       setLoading(false);
       return;
     }
-
-    // Get stored profile
-    const storedProfile = localStorage.getItem('userProfile');
-    const profile = storedProfile ? JSON.parse(storedProfile) : {};
     
-    // Only set admin status from profile, don't override with email check
-    setIsAdmin(profile.isAdmin || false);
+    // Set admin status ONLY from user object (which comes from server verification)
+    const adminStatus = user.isAdmin === true;    
+    setIsAdmin(adminStatus);
     
-    // Set premium status
-    setIsPremium(profile.isPremium || profile.isAdmin || false);
-    
-    // Load admin mode from localStorage
-    const storedAdminMode = localStorage.getItem('adminMode');
-    if (storedAdminMode) {
-      const { isAdminMode: storedMode, userId } = JSON.parse(storedAdminMode);
-      // Only apply stored admin mode if it belongs to the current user
-      if (userId === user.id) {
-        setIsAdminMode(storedMode && profile.isAdmin);
-      } else {
-        // Clear stored admin mode if it belongs to a different user
-        localStorage.removeItem('adminMode');
-      }
-    }
+    // Only a presentation preference, doesn't affect actual permissions
+    const savedAdminMode = sessionStorage.getItem('adminMode') === 'true';
+    setIsAdminMode(savedAdminMode && adminStatus);
     
     setLoading(false);
   }, [user, isAuthenticated]);
 
-  // Custom setter for admin mode that persists to localStorage
-  const handleSetAdminMode = (value: boolean) => {
-    if (!isAuthenticated || !user || user.id.startsWith('guest_')) {
-      setIsAdminMode(false);
-      localStorage.removeItem('adminMode');
-      return;
+  // Verify admin status with backend
+  const verifyAdminStatus = async (): Promise<boolean> => {
+    if (!user) {
+      return false;
     }
 
+    try {
+      const getAdminStatus = httpsCallable(functions, 'getUserRole');
+      const result = await getAdminStatus({ role: 'isAdmin' });
+      
+      // Result is the truth about admin status from the server
+      // @ts-ignore
+      const hasAdminRole = result.data.hasRole === true;
+      
+      // Update local state to match server 
+      setIsAdmin(hasAdminRole);
+      
+      return hasAdminRole;
+    } catch (error) {
+      console.error('Error verifying admin status:', error);
+      toast.error('Error verifying admin status. Please try again.');
+      return false;
+    }
+  };
+
+  // Update admin mode UI preference (doesn't grant permissions)
+  const handleSetIsAdminMode = (value: boolean): void => {
+    // Can only set admin mode if actually an admin
+    if (value && !isAdmin) {
+      toast.error('You must be an admin to enable admin mode.');
+      return;
+    }
+    
     setIsAdminMode(value);
     
-    // Save admin mode preference to localStorage
     if (value) {
-      localStorage.setItem('adminMode', JSON.stringify({
-        isAdminMode: value,
-        userId: user.id
-      }));
+      sessionStorage.setItem('adminMode', 'true');
     } else {
-      localStorage.removeItem('adminMode');
+      sessionStorage.removeItem('adminMode');
     }
   };
 
-  // Custom setter for admin status that updates profile
-  const handleSetAdmin = async (value: boolean) => {
-    if (!isAuthenticated || !user || user.id.startsWith('guest_')) {
-      setIsAdmin(false);
-      return;
-    }
-
-    setIsAdmin(value);
-    
-    // Update user profile in localStorage
-    const storedProfile = localStorage.getItem('userProfile');
-    const profile = storedProfile ? JSON.parse(storedProfile) : {};
-    
-    const updatedProfile = {
-      ...profile,
-      isAdmin: value, // Explicitly set the admin status
-      isPremium: value ? true : profile.isPremium // Ensure admin users have premium access
-    };
-    
-    // Save to localStorage
-    localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
-    
-    // Update premium status
-    setIsPremium(updatedProfile.isPremium);
-    
-    // Clear admin mode if admin status is turned off
-    if (!value) {
-      setIsAdminMode(false);
-      localStorage.removeItem('adminMode');
-    }
-  };
-
-  const value = {
-    isAdmin,
-    isAdminMode,
-    setIsAdmin: handleSetAdmin,
-    setIsAdminMode: handleSetAdminMode,
-    loading,
-    isPremium
-  };
-
-  return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
+  return (
+    <AdminContext.Provider
+      value={{
+        isAdmin,
+        isAdminMode,
+        loading,
+        setIsAdminMode: handleSetIsAdminMode,
+        setIsAdmin,
+        verifyAdminStatus
+      }}
+    >
+      {children}
+    </AdminContext.Provider>
+  );
 };
 
-export function useAdmin() {
+export const useAdmin = () => {
   const context = useContext(AdminContext);
   if (context === undefined) {
     throw new Error('useAdmin must be used within an AdminProvider');
   }
   return context;
-} 
+}; 

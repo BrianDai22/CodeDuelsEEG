@@ -1,77 +1,101 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
-// Restore all imports
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { TooltipProvider } from "@ui/feedback/tooltip";
-import { Toaster } from "@ui/feedback/toaster";
-import { Toaster as Sonner } from "@ui/feedback/sonner";
+// Auth providers
+import { AuthProvider } from '@features/auth/AuthContext';
+import { AdminProvider } from '@shared/context/AdminContext';
+import { PremiumProvider } from '@shared/context/PremiumContext';
 
-// Feature imports
-import { Login, Signup, ForgotPassword, ProtectedRoute } from "@features/auth";
-import { Battle, FindMatch, Results } from "@features/arena";
-import { Leaderboard } from "@features/leaderboard";
-import { MatchHistory, Settings } from "@features/profile";
-import { PremiumDashboard, PremiumFeatures, PremiumSuccess, PremiumRedirect } from "@features/premium";
+// Secure components
+import ProtectedRoute from '@features/auth/components/ProtectedRoute';
+import SecureMiddleware from '@features/auth/components/SecureMiddleware';
 
-// Shared imports
-import { AuthProvider } from "@features/auth/AuthContext";
-import { AnalyticsProvider } from "@shared/components/AnalyticsProvider";
-import { AdminProvider } from "@shared/context/AdminContext";
-import Index from "@pages/Index";
-import NotFound from "@pages/NotFound";
+// Page components
+import Battle from '@features/arena/pages/Battle';
 
-const queryClient = new QueryClient();
+// Analytics integration
+import * as amplitude from '@amplitude/analytics-browser';
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <Router>
-        <AuthProvider>
-          <AnalyticsProvider>
-            <AdminProvider>
-              <PremiumRedirect>
-                  <Routes>
-                    <Route path="/" element={<Index />} />
-                    <Route path="/battle" element={<Battle />} />
-                    <Route path="/results" element={<Results />} />
-                    <Route path="/leaderboard" element={<Leaderboard />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/signup" element={<Signup />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/find-match" element={
-                      <ProtectedRoute>
-                        <FindMatch />
-                      </ProtectedRoute>
-                    } />
-                    <Route path="/premium" element={<PremiumFeatures />} />
-                    <Route path="/premium/success" element={<PremiumSuccess />} />
-                    <Route path="/premium-dashboard" element={
-                      <ProtectedRoute>
-                        <PremiumDashboard />
-                      </ProtectedRoute>
-                    } />
-                    <Route path="/match-history" element={
-                      <ProtectedRoute>
-                        <MatchHistory />
-                      </ProtectedRoute>
-                    } />
-                    <Route path="/settings" element={
-                      <ProtectedRoute>
-                        <Settings />
-                      </ProtectedRoute>
-                    } />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-              </PremiumRedirect>
-            </AdminProvider>
-          </AnalyticsProvider>
-        </AuthProvider>
-      </Router>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+function App() {
+  // Initialize analytics
+  useEffect(() => {
+    const amplitudeApiKey = import.meta.env.VITE_AMPLITUDE_API_KEY;
+    const enableAnalytics = import.meta.env.VITE_ENABLE_ANALYTICS === 'true';
+    
+    if (amplitudeApiKey && enableAnalytics) {
+      amplitude.init(amplitudeApiKey, {
+        defaultTracking: {
+          sessions: true,
+          pageViews: true,
+          formInteractions: true,
+          fileDownloads: true
+        }
+      });
+      console.log('Analytics initialized');
+    }
+  }, []);
+
+  return (
+    <Router>
+      <AuthProvider>
+        <AdminProvider>
+          <PremiumProvider>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<div>Home Page</div>} />
+              <Route path="/login" element={<div>Login Page</div>} />
+              <Route path="/signup" element={<div>Signup Page</div>} />
+              
+              {/* Battle routes with security */}
+              <Route 
+                path="/battle/:lobbyCode" 
+                element={
+                  <ProtectedRoute>
+                    <Battle />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/find-match" 
+                element={
+                  <ProtectedRoute>
+                    <div>Find Match Page</div>
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* Premium routes */}
+              <Route 
+                path="/premium/*" 
+                element={
+                  <ProtectedRoute requirePremium>
+                    <SecureMiddleware requirePremium>
+                      <div>Premium Features</div>
+                    </SecureMiddleware>
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* Admin routes */}
+              <Route 
+                path="/admin/*" 
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <SecureMiddleware requireAdmin>
+                      <div>Admin Dashboard</div>
+                    </SecureMiddleware>
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* Fallback route */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </PremiumProvider>
+        </AdminProvider>
+      </AuthProvider>
+    </Router>
+  );
+}
 
 export default App;

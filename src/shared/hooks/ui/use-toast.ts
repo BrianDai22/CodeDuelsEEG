@@ -1,4 +1,5 @@
 import * as React from "react"
+import { toast } from 'sonner';
 
 import type {
   ToastProps,
@@ -188,3 +189,33 @@ function useToast() {
 }
 
 export { useToast, toast }
+
+type ToastProps = {
+  title?: string;
+  description?: string;
+  type?: 'default' | 'success' | 'error' | 'info' | 'warning';
+};
+
+export const useToast = () => {
+  const showToast = ({ title, description, type = 'default' }: ToastProps) => {
+    switch (type) {
+      case 'success':
+        toast.success(title, { description });
+        break;
+      case 'error':
+        toast.error(title, { description });
+        break;
+      case 'info':
+        toast.info(title, { description });
+        break;
+      case 'warning':
+        toast.warning(title, { description });
+        break;
+      default:
+        toast(title, { description });
+        break;
+    }
+  };
+
+  return { toast: showToast };
+};
